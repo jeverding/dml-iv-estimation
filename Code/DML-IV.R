@@ -1,10 +1,7 @@
 # ========================================================================================================== #
 # ========================================================================================================== # 
 #
-#
-# Title: Double Machine Learning for IV estimation 
-# Author: Jakob Everding 
-# Date: 11.09.2018 
+# Double Machine Learning for IV estimation 
 #
 # This script implements the double machine learning (DML) approach to conduct causal inference. The script 
 # defines functions which allow to sequentially execute the different DML steps and estimate instrumenal 
@@ -83,15 +80,13 @@ DML2.for.PLIVM <- function(x, d, z, y, dreg, yreg, zreg, nfold=2) {
 # Load data --------------------------------------------------------------------------------------------------
 data.share <- read.dta13(file.path(data_dir,"share_rel6-1-1_data3.dta")) #data.share <- read.dta13("C:\\Users\\Jakob.Everding\\Desktop\\170512_Offline Arbeit\\05_Spillovers and Health of Unemployed\\03_Stata\\01_Datasets\\03_SHARE\\share_rel6-1-1_data3.dta")
 
-### To Do: Change remaining pre-processing steps to dplyr style 
-# Select relevant variables 
-data.share <- data.share[,c("eurodcat", "bmi", "chyrseduc", "t_compschool", "sex", "chsex", "alone", "wwar", "int_year", "chmarried", "chdivorce", "chwidow", "ch200km", "chclose", "chlescontct", "chmuccontct", "ch007_", "ch014_", "ch016_", "married", "divorce", "widow", "partnerinhh", "ep005_", "agemonth", "hhsize", "yrseduc", "chnchild", "chchbyear")]
-# Drop if missing: 
-data.share <- na.omit(data.share)
+# Some remaining pre-processing (select relevant variables, drop missings, recode variables)
+var.select <- c("eurodcat", "bmi", "chyrseduc", "t_compschool", "sex", "chsex", "alone", "wwar", "int_year", "chmarried", "chdivorce", "chwidow", "ch200km", "chclose", "chlescontct", "chmuccontct", "ch007_", "ch014_", "ch016_", "married", "divorce", "widow", "partnerinhh", "ep005_", "agemonth", "hhsize", "yrseduc", "chnchild", "chchbyear")
 data.share <- 
   data.share %>% 
+  select(var.select) %>% 
+  na.omit() %>% 
   mutate(eurodcat = as.numeric(eurodcat))
-
 
 # Assign outcome y, treatment d, and instrumental variable z  
 y= as.matrix(data.share[,"eurodcat"]) 
