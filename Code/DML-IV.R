@@ -78,7 +78,8 @@ DML2.for.PLIVM <- function(x, d, z, y, dreg, yreg, zreg, nfold=2) {
 
 # Start ==================================================================================================== # 
 # Load data --------------------------------------------------------------------------------------------------
-data.share <- read.dta13(file.path(data_dir,"share_rel6-1-1_data3.dta")) #data.share <- read.dta13("C:\\Users\\Jakob.Everding\\Desktop\\170512_Offline Arbeit\\05_Spillovers and Health of Unemployed\\03_Stata\\01_Datasets\\03_SHARE\\share_rel6-1-1_data3.dta")
+### To Do: Maybe change syntax for import here 
+data.share <- read.dta13(file.path(data_dir,"share_rel6-1-1_data3.dta")) 
 
 # Some additional pre-processing (select relevant variables, drop missings, recode variables)
 var.select <- c("eurodcat", "chyrseduc", "t_compschool", "sex", "chsex", "alone", "int_year", "chmarried", "chdivorce", "chwidow", "ch200km", "chclose", "chlescontct", "chmuccontct", "ch007_", "ch014_", "ch016_", "married", "divorce", "widow", "partnerinhh", "ep005_", "agemonth", "hhsize", "yrseduc", "chnchild", "chbyear", "country")
@@ -87,7 +88,7 @@ data.share <-
   select(var.select) %>% 
   na.omit() %>% 
   mutate(eurodcat = as.numeric(eurodcat))
-View(data.share)
+
 # Assign outcome y, treatment d, and instrumental variable z  
 y <- as.matrix(data.share[,"eurodcat"]) 
 d <- as.matrix(data.share[,"chyrseduc"]) 
@@ -96,12 +97,12 @@ z <- as.matrix(data.share[,"t_compschool"])
 # Implement machine learning methods to get residuals --------------------------------------------------------
 # Code up model for regularized regression methods 
 # Use this model for testing only (so that code runs faster)
-x.testing <- model.matrix(~(sex + chsex + factor(int_year) + factor(ch016_) + poly(agemonth,2) + poly(hhsize,2) + poly(yrseduc,2) + factor(chbyear) + factor(country))^2, 
+x <- model.matrix(~(sex + chsex + factor(int_year) + factor(ch016_) + poly(agemonth,2) + poly(hhsize,2) + poly(yrseduc,2) + factor(chbyear) + factor(country))^2, 
                   data=data.share)
 # Basic model for actual preliminary analyses 
-x <- model.matrix(~(sex + chsex + alone + factor(int_year) + chmarried + chdivorce + chwidow + ch200km + chclose + chlescontct + chmuccontct + factor(ch007_) + factor(ch014_) + factor(ch016_) + married + divorce + widow + partnerinhh + factor(ep005_) + poly(agemonth,4) + poly(hhsize,4) + poly(yrseduc,4) + poly(chnchild,4) + factor(chbyear) + factor(country))^2, 
+x.prelim <- model.matrix(~(sex + chsex + alone + factor(int_year) + chmarried + chdivorce + chwidow + ch200km + chclose + chlescontct + chmuccontct + factor(ch007_) + factor(ch014_) + factor(ch016_) + married + divorce + widow + partnerinhh + factor(ep005_) + poly(agemonth,4) + poly(hhsize,4) + poly(yrseduc,4) + poly(chnchild,4) + factor(chbyear) + factor(country))^2, 
                   data=data.share)
-View(data.share)
+
 # 1) Lasso 
 dreg <- function(x,d){ rlasso(x, d) } 
 yreg <- function(x,y){ rlasso(x, y) } 
