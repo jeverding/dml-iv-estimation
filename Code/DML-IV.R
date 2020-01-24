@@ -29,6 +29,9 @@ library(rpart.plot)
 library(gbm)
 library(foreign)
 library(readstata13)
+library(sandwich)
+library(AER)
+library(clusterSEs)
 
 
 # Setup ------------------------------------------------------------------------------------------------------
@@ -42,8 +45,20 @@ seed.set <- 180911
 
 
 # Functions --------------------------------------------------------------------------------------------------
+# Clustering standard errors
+clust.se <- function(est.model, cluster){
+  G <- length(unique(cluster))
+  N <- length(cluster)
+  # reweight the variance-covariance matrix by groups (clusters) and sample size, using the sandwich package 
+  dfa <- (G/(G - 1)) * ((N - 1)/(N - est.model$rank))
+  u <- apply(estfun(est.model),2,
+             function(x) tapply(x, cluster, sum))
+  vcovCL <- dfa*sandwich(est.model, meat=crossprod(u)/N)
+  coeftest(est.model, vcovCL) 
+}
+
 # DML for PLIVM
-DML2.for.PLIVM <- function(x, d, z, y, dreg, yreg, zreg, nfold=2) {
+DML2.for.PLIVM <- function(x, y, d, z, yreg, dreg, zreg, nfold=2, cluster=x[,1]) {
   # this implements DML2 algorithm. Moments are estimated via DML, randomly split data into folds before 
   # estimating pooled estimate of theta 
   nobs <- nrow(x)
@@ -94,19 +109,44 @@ y <- as.matrix(data.share[,"eurodcat"])
 d <- as.matrix(data.share[,"chyrseduc"]) 
 z <- as.matrix(data.share[,"t_compschool"]) 
 
+# ++++
+# test: ivreg 
+data.share$y <- data.share[,"eurodcat"] 
+data.share$d <- data.share[,"chyrseduc"] 
+data.share$z <- data.share[,"t_compschool"] 
+data.share$cluster <- as.numeric(factor(data.share$country)) 
+test.ivfit <- ivreg(formula = y ~ d | z, 
+                    data = data.share)
+summ.test.ivfit <- summary(test.ivfit)
+summ.test.ivfit #$coefficients[2,3]
+test.ivfit.clust <- cluster.wild.ivreg(test.ivfit, 
+                                     dat = data.share, 
+                                     cluster = ~ cluster, 
+                                     ci.level = 0.95, 
+                                     boot.reps = 1000, 
+                                     seed = seed.set)
+test.ivfit.clust
+# ++++
+
+# define level of clustering standard errors 
+cluster.level <- as.numeric(factor(data.share$country)) 
+View(as.numeric(data.share$country))
+
 # Implement machine learning methods to get residuals --------------------------------------------------------
 # Code up model for regularized regression methods 
 # Use this model for testing only (so that code runs faster)
-x <- model.matrix(~(sex + chsex + factor(int_year) + factor(ch016_) + poly(agemonth,2) + poly(hhsize,2) + poly(yrseduc,2) + factor(chbyear) + factor(country))^2, 
+x <- model.matrix(~(factor(country) + factor(chbyear) + factor(int_year)), # + sex + chsex + factor(ch016_) + poly(agemonth,2) + poly(hhsize,2) + poly(yrseduc,2))^2, 
                   data=data.share)
 # Basic model for actual preliminary analyses 
 x.prelim <- model.matrix(~(sex + chsex + alone + factor(int_year) + chmarried + chdivorce + chwidow + ch200km + chclose + chlescontct + chmuccontct + factor(ch007_) + factor(ch014_) + factor(ch016_) + married + divorce + widow + partnerinhh + factor(ep005_) + poly(agemonth,4) + poly(hhsize,4) + poly(yrseduc,4) + poly(chnchild,4) + factor(chbyear) + factor(country))^2, 
                   data=data.share)
 
 # 1) Lasso 
-dreg <- function(x,d){ rlasso(x, d) } 
 yreg <- function(x,y){ rlasso(x, y) } 
+dreg <- function(x,d){ rlasso(x, d) } 
 zreg <- function(x,z){ rlasso(x, z) } 
 
 # Run DML algorithm 
-DML2.lasso <- DML2.for.PLIVM(x, d, z, y, dreg, yreg, zreg, nfold=2)
+DML2.lasso <- DML2.for.PLIVM(x, y, d, z, yreg, dreg, zreg, 
+                             nfold = 2, 
+                             cluster = cluster.level)
