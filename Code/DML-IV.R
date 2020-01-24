@@ -46,6 +46,7 @@ seed.set <- 180911
 
 # Functions --------------------------------------------------------------------------------------------------
 # Clustering standard errors
+# Traditional approach. Not needed for wild cluster bootstrap inf. 
 clust.se <- function(est.model, cluster){
   G <- length(unique(cluster))
   N <- length(cluster)
@@ -58,7 +59,7 @@ clust.se <- function(est.model, cluster){
 }
 
 # DML for PLIVM
-DML2.for.PLIVM <- function(x, y, d, z, yreg, dreg, zreg, nfold=2, cluster=x[,1]) {
+DML2.for.PLIVM <- function(x, y, d, z, yreg, dreg, zreg, nfold=2) {
   # this implements DML2 algorithm. Moments are estimated via DML, randomly split data into folds before 
   # estimating pooled estimate of theta 
   nobs <- nrow(x)
@@ -128,9 +129,8 @@ test.ivfit.clust <- cluster.wild.ivreg(test.ivfit,
 test.ivfit.clust
 # ++++
 
-# define level of clustering standard errors 
-cluster.level <- as.numeric(factor(data.share$country)) 
-View(as.numeric(data.share$country))
+## define level of clustering standard errors 
+#cluster.level <- as.numeric(factor(data.share$country)) 
 
 # Implement machine learning methods to get residuals --------------------------------------------------------
 # Code up model for regularized regression methods 
@@ -147,6 +147,4 @@ dreg <- function(x,d){ rlasso(x, d) }
 zreg <- function(x,z){ rlasso(x, z) } 
 
 # Run DML algorithm 
-DML2.lasso <- DML2.for.PLIVM(x, y, d, z, yreg, dreg, zreg, 
-                             nfold = 2, 
-                             cluster = cluster.level)
+DML2.lasso <- DML2.for.PLIVM(x, y, d, z, yreg, dreg, zreg, nfold = 2)
