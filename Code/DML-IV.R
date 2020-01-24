@@ -130,6 +130,7 @@ test.ivfit.clust
 # ++++
 
 ## define level of clustering standard errors 
+## (not needed when using clusterSEs methods like wild cluster bootstrap)
 #cluster.level <- as.numeric(factor(data.share$country)) 
 
 # Implement machine learning methods to get residuals --------------------------------------------------------
