@@ -67,12 +67,12 @@ Partial.out <- function(y,x){
   colnames(table.mse)<- c("MSE", "Optimal Tuning Parameter")               
   
   # Sample splitting 80-20
-  train = sample(1:nrow(x),8*dim(x)[1]/10) 
+  train <- sample(1:nrow(x),8*dim(x)[1]/10) 
   # Split data in 80% training and 20 % test data. Leaving out the 1 vector because glmnet will automatically estimate the intercept.  
-  x.train = x[train,]
-  y.train = y[train]
-  x.test = x[-train,] 
-  y.test = y[-train] 
+  x.train <- x[train,]
+  y.train <- y[train]
+  x.test <- x[-train,] 
+  y.test <- y[-train] 
   
   #### OLS #####
   #Lin.mod <- lm(y.train~., data = data.frame(y.train, x.train[,-1]))
