@@ -58,6 +58,84 @@ clust.se <- function(est.model, cluster){
   coeftest(est.model, vcovCL) 
 }
 
+# Partialling out (first part of DML algorithm) 
+Partial.out <- function(y,x){
+  # Setting up the table  the ranking
+  table.mse<- matrix(0, nrow = 6, ncol = 2)              
+  #rownames(table.mse)<- c("OLS", "Ridge",  "Elastic Net (alpha = 0.2)", "Elastic Net (alpha = 0.4)", "Elastic Net (alpha = 0.6)" ,"Elastic Net (alpha = 0.8)","Lasso" , "Random Forest", "Gradient Boosting", "Neural Nets")
+  rownames(table.mse)<- c("Ridge",  "Elastic Net (alpha = 0.2)", "Elastic Net (alpha = 0.4)", "Elastic Net (alpha = 0.6)" ,"Elastic Net (alpha = 0.8)","Lasso")
+  colnames(table.mse)<- c("MSE", "Optimal Tuning Parameter")               
+  
+  # Sample splitting 80-20
+  train = sample(1:nrow(x),8*dim(x)[1]/10) 
+  # Split data in 80% training and 20 % test data. Leaving out the 1 vector because glmnet will automatically estimate the intercept.  
+  x.train = x[train,]
+  y.train = y[train]
+  x.test = x[-train,] 
+  y.test = y[-train] 
+  
+  #### OLS #####
+  #Lin.mod <- lm(y.train~., data = data.frame(y.train, x.train[,-1]))
+  # Calculating the MSE of the prediction error (removing the Intercept of x.test)
+  # Issuse -> Dummies high probability of Perfect multicollinearity. No reliable Prediction.
+  #table.mse[1,1] <- mean((predict.lm(Lin.mod, as.data.frame(x.test[,-1])) - y.test)^2)
+  #table.mse[1,2] <- "-"
+  
+  #### Lasso Elastic Net Ridge ####
+  # Set step size for alpha 
+  r <- 5
+  for (i in seq(0,1, 1/r)) {
+    # 5-fold CV to estimate tuning paramter with the lowest prediction error (could also use e.g. 10 folds)
+    cv.out <- cv.glmnet(x.train, y.train, family = "gaussian", nfolds = 10, alpha = i)
+    # Select lambda (here: 1se instead of min.) 
+    bestlam <- cv.out$lambda.1se
+    # Get prediction error using the test data
+    pred <- predict(cv.out, type = 'response', 
+                    s = bestlam, newx = x.test)
+    table.mse[r*i+1,1] <- mean((pred - y.test)^2) 
+    table.mse[r*i+1,2] <- bestlam
+    print(paste("Model using alpha =", i, "fitted."))
+  }
+  
+  paste(rownames(table.mse)[which.min(table.mse[,1])], "performs best with a MSE of", table.mse[which.min(table.mse[,1]),1], "and a hyperparameter of",table.mse[which.min(table.mse[,1]),2])
+  
+  # Benchmarking: Select best method based on OOB MSE 
+  opt.lambda <- table.mse[which.min(table.mse[,1]), 2]
+  if (rownames(table.mse)[which.min(table.mse[,1])] == "Elastic Net (alpha = 0.2)") {
+    best.mod <-  glmnet(x, y, 
+                        alpha = 0.2, lambda = opt.lambda)
+    y.hat <- predict(best.mod, type = 'response', s = opt.lambda, newx = x)
+  }
+  if (rownames(table.mse)[which.min(table.mse[,1])] == "Elastic Net (alpha = 0.4)") {
+    best.mod <-  glmnet(x, y, 
+                        alpha = 0.4, lambda = opt.lambda)
+    y.hat <- predict(best.mod, type = 'response', s = opt.lambda, newx = x)
+  }
+  if (rownames(table.mse)[which.min(table.mse[,1])] == "Elastic Net (alpha = 0.6)") {
+    best.mod <-  glmnet(x, y, 
+                        alpha = 0.6, lambda = opt.lambda)
+    y.hat <- predict(best.mod, type = 'response', s = opt.lambda, newx = x)
+  }
+  if (rownames(table.mse)[which.min(table.mse[,1])] == "Elastic Net (alpha = 0.8)") {
+    best.mod <-  glmnet(x, y, 
+                        alpha = 0.8, lambda = opt.lambda)
+    y.hat <- predict(best.mod, type = 'response', s = opt.lambda, newx = x)
+  }
+  if (rownames(table.mse)[which.min(table.mse[,1])] == "Lasso") {
+    best.mod <-  glmnet(x, y, 
+                        alpha = 1, lambda = opt.lambda)
+    y.hat <- predict(best.mod, type = 'response', s = opt.lambda, newx = x)
+  }
+  if (rownames(table.mse)[which.min(table.mse[,1])] == "Ridge") {
+    best.mod <-  glmnet(x, y, 
+                        alpha = 0, lambda = opt.lambda)
+    y.hat <- predict(best.mod, type = 'response', s = opt.lambda, newx = x)
+  }
+  ytil <- (y - y.hat) 
+  return(list("ytil" = ytil, 
+              "table.mse" = table.mse))
+}
+
 # DML for PLIVM
 DML2.for.PLIVM <- function(x, y, d, z, yreg, dreg, zreg, nfold=2) {
   # this implements DML2 algorithm. Moments are estimated via DML, randomly split data into folds before 
@@ -111,7 +189,7 @@ d <- as.matrix(data.share[,"chyrseduc"])
 z <- as.matrix(data.share[,"t_compschool"]) 
 
 # ++++
-# test: ivreg 
+# test: ivreg for cluster robust inference (to do: wrap in function)
 data.share$y <- data.share[,"eurodcat"] 
 data.share$d <- data.share[,"chyrseduc"] 
 data.share$z <- data.share[,"t_compschool"] 
@@ -121,11 +199,11 @@ test.ivfit <- ivreg(formula = y ~ d | z,
 summ.test.ivfit <- summary(test.ivfit)
 summ.test.ivfit #$coefficients[2,3]
 test.ivfit.clust <- cluster.wild.ivreg(test.ivfit, 
-                                     dat = data.share, 
-                                     cluster = ~ cluster, 
-                                     ci.level = 0.95, 
-                                     boot.reps = 1000, 
-                                     seed = seed.set)
+                                       dat = data.share, 
+                                       cluster = ~ cluster, 
+                                       ci.level = 0.95, 
+                                       boot.reps = 1000, 
+                                       seed = seed.set)
 test.ivfit.clust
 # ++++
 
@@ -140,7 +218,7 @@ x <- model.matrix(~(factor(country) + factor(chbyear) + factor(int_year)), # + s
                   data=data.share)
 # Basic model for actual preliminary analyses 
 x.prelim <- model.matrix(~(sex + chsex + alone + factor(int_year) + chmarried + chdivorce + chwidow + ch200km + chclose + chlescontct + chmuccontct + factor(ch007_) + factor(ch014_) + factor(ch016_) + married + divorce + widow + partnerinhh + factor(ep005_) + poly(agemonth,4) + poly(hhsize,4) + poly(yrseduc,4) + poly(chnchild,4) + factor(chbyear) + factor(country))^2, 
-                  data=data.share)
+                         data=data.share)
 
 # 1) Lasso 
 yreg <- function(x,y){ rlasso(x, y) } 
