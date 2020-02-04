@@ -8,9 +8,7 @@
 # variables regressions eventually. 
 #
 # To Do: 
-# - Implement behnchmarking of different ML methods for each partialling out step. (Incl. automatic 
-# selection of best performing ML method to compute residuals.) 
-# - Estimation of various standard errors, e.g. wild cluster robust 
+# - Estimation of various standard errors/confidence intervals for inference, e.g. wild cluster robust 
 # - Implement support for choosing regression weights 
 #
 # ========================================================================================================== #
@@ -122,7 +120,7 @@ Partial.out <- function(y,x){
   # Benchmarking: Select best method based on OOB MSE 
   # (Identify best method directly using method-specific tuning parameters): 
   if (!is.na(table.mse$lambda[which.min(table.mse$MSE)])) { 
-    best.mod <- glmnet(x, d, 
+    best.mod <- glmnet(x, y, 
                        alpha = table.mse$alpha[which.min(table.mse[,1])], 
                        lambda = table.mse$lambda[which.min(table.mse[,1])])
     y.hat <- predict(best.mod, type = 'response', 
