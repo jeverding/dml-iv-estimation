@@ -61,10 +61,12 @@ clust.se <- function(est.model, cluster){
 # Partialling out (first part of DML algorithm) 
 Partial.out <- function(y,x){
   # Setting up the table  the ranking
-  table.mse<- matrix(0, nrow = 6, ncol = 2)              
+  table.mse <- matrix(NA, nrow = 9, ncol = 4)              
   #rownames(table.mse)<- c("OLS", "Ridge",  "Elastic Net (alpha = 0.2)", "Elastic Net (alpha = 0.4)", "Elastic Net (alpha = 0.6)" ,"Elastic Net (alpha = 0.8)","Lasso" , "Random Forest", "Gradient Boosting", "Neural Nets")
-  rownames(table.mse)<- c("Ridge",  "Elastic Net (alpha = 0.2)", "Elastic Net (alpha = 0.4)", "Elastic Net (alpha = 0.6)" ,"Elastic Net (alpha = 0.8)","Lasso")
-  colnames(table.mse)<- c("MSE", "Optimal Tuning Parameter")               
+  rownames(table.mse)<- c("Ridge",  "Elastic Net (alpha = 0.2)", "Elastic Net (alpha = 0.4)", "Elastic Net (alpha = 0.6)" ,"Elastic Net (alpha = 0.8)","Lasso","Random Forest", "Gradient Boosting", "Neural Nets")
+  colnames(table.mse)<- c("MSE", "lambda", "alpha", "ntree", "Method") 
+  table.mse <- as.data.frame(table.mse)
+  table.mse$Method <- factor(c(1,1,1,1,1,1,2,3,4), labels = c("glmnet", "randomforest", "boost", "nn"))
   
   # Sample splitting 80-20
   train <- sample(x = 1:nrow(x), size = dim(x)[1]*0.8) 
@@ -83,8 +85,9 @@ Partial.out <- function(y,x){
   
   #### Lasso Elastic Net Ridge ####
   # Set step size for alpha 
-  r <- 5
-  for (i in seq(0,1, 1/r)) {
+  r <- 0.2
+  table.mse$alpha[table.mse$Method=="glmnet"] <- seq(0, 1, r) 
+  for (i in seq(0, 1, r)) {
     # 5-fold CV to estimate tuning paramter with the lowest prediction error (could also use e.g. 10 folds)
     cv.out <- cv.glmnet(x.train, y.train, family = "gaussian", nfolds = 10, alpha = i)
     # Select lambda (here: 1se instead of min.) 
@@ -92,45 +95,48 @@ Partial.out <- function(y,x){
     # Get prediction error using the test data
     pred <- predict(cv.out, type = 'response', 
                     s = bestlam, newx = x.test)
-    table.mse[r*i+1,1] <- mean((pred - y.test)^2) 
-    table.mse[r*i+1,2] <- bestlam
+    table.mse$MSE[table.mse$Method == "glmnet" & table.mse$alpha == i] <- mean((pred - y.test)^2) 
+    table.mse$lambda[table.mse$Method == "glmnet" & table.mse$alpha == i, 2] <- bestlam
     print(paste("Model using alpha =", i, "fitted."))
   }
   
-  paste(rownames(table.mse)[which.min(table.mse[,1])], "performs best with a MSE of", table.mse[which.min(table.mse[,1]),1], "and a hyperparameter of",table.mse[which.min(table.mse[,1]),2])
+  #### Random Forest ####
+  ntree.set <- 5000
+  # Tuning part
+  rf.cv <- rfcv(x.train, y.train, cv.fold = 10, scale = log, step = 0.5)
+  # To Do: Complete rf model selection and prediction 
+  which.min(rf.cv$error.cv) 
+  
+  table.mse$MSE[table.mse$Method == "rf"] <- mean((pred - y.test)^2) 
+  #table.mse$mtry[table.mse$Method == "randomforest"] <- which.min(rf.cv$error.cv) 
+  table.mse$ntree[table.mse$Method == "randomforest"] <- ntree.set 
+  
+  #paste(rownames(table.mse)[which.min(table.mse[,1])], "performs best with a MSE of", table.mse[which.min(table.mse[,1]),1], "and a hyperparameter of",table.mse[which.min(table.mse[,1]),2])
+  
+  # Benchmarking: 
+  ## Define best tuning parameters 
+  #opt.lambda <- table.mse$lambda[which.min(table.mse[,1])] 
+  #opt.alpha <- table.mse$alpha[which.min(table.mse[,1])] 
+  #opt.mrty <- which.min(rf.cv$error.cv) 
   
   # Benchmarking: Select best method based on OOB MSE 
-  opt.lambda <- table.mse[which.min(table.mse[,1]), 2]
-  if (rownames(table.mse)[which.min(table.mse[,1])] == "Elastic Net (alpha = 0.2)") {
-    best.mod <-  glmnet(x, y, 
-                        alpha = 0.2, lambda = opt.lambda)
-    y.hat <- predict(best.mod, type = 'response', s = opt.lambda, newx = x)
+  # (Identify best method directly using method-specific tuning parameters): 
+  if (!is.na(table.mse$lambda[which.min(table.mse$MSE)])) { 
+    best.mod <- glmnet(x, d, 
+                       alpha = table.mse$alpha[which.min(table.mse[,1])], 
+                       lambda = table.mse$lambda[which.min(table.mse[,1])])
+    y.hat <- predict(best.mod, type = 'response', 
+                     s = table.mse$lambda[which.min(table.mse[,1])], 
+                     newx = x)
   }
-  if (rownames(table.mse)[which.min(table.mse[,1])] == "Elastic Net (alpha = 0.4)") {
-    best.mod <-  glmnet(x, y, 
-                        alpha = 0.4, lambda = opt.lambda)
-    y.hat <- predict(best.mod, type = 'response', s = opt.lambda, newx = x)
+  if (!is.na(table.mse$ntree[which.min(table.mse$MSE)])) { 
+    best.mod <- randomForest(y~., data.frame(y, x), 
+                             ntree = ntree.set,
+                             mtry = which.min(rf.cv$error.cv), 
+                             importance = TRUE)
+    y.hat <- predict(best.mod, newdata = data.frame(y, x)) 
   }
-  if (rownames(table.mse)[which.min(table.mse[,1])] == "Elastic Net (alpha = 0.6)") {
-    best.mod <-  glmnet(x, y, 
-                        alpha = 0.6, lambda = opt.lambda)
-    y.hat <- predict(best.mod, type = 'response', s = opt.lambda, newx = x)
-  }
-  if (rownames(table.mse)[which.min(table.mse[,1])] == "Elastic Net (alpha = 0.8)") {
-    best.mod <-  glmnet(x, y, 
-                        alpha = 0.8, lambda = opt.lambda)
-    y.hat <- predict(best.mod, type = 'response', s = opt.lambda, newx = x)
-  }
-  if (rownames(table.mse)[which.min(table.mse[,1])] == "Lasso") {
-    best.mod <-  glmnet(x, y, 
-                        alpha = 1, lambda = opt.lambda)
-    y.hat <- predict(best.mod, type = 'response', s = opt.lambda, newx = x)
-  }
-  if (rownames(table.mse)[which.min(table.mse[,1])] == "Ridge") {
-    best.mod <-  glmnet(x, y, 
-                        alpha = 0, lambda = opt.lambda)
-    y.hat <- predict(best.mod, type = 'response', s = opt.lambda, newx = x)
-  }
+  
   ytil <- (y - y.hat) 
   return(list("ytil" = ytil, 
               "table.mse" = table.mse))
