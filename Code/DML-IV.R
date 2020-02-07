@@ -11,6 +11,7 @@
 # - Estimation of various standard errors/confidence intervals for inference, e.g. wild cluster robust 
 # - Implement support for choosing regression weights 
 # - Check data type of outcome and adjust fam.glmnet; binary: binomial; else: gaussian 
+# - Implement GBM for partialling out / model selection 
 #
 # ========================================================================================================== #
 # ========================================================================================================== #
@@ -108,7 +109,6 @@ Partial.out <- function(y,x){
     print(paste("Model using alpha =", i, "fitted."))
   }
   
-  #### Random Forest ####
   #### Random Forest ####
   ntree.set <- 5000
   # Tuning part using rfcv from randomForest 
