@@ -10,6 +10,7 @@
 # To Do: 
 # - Estimation of various standard errors/confidence intervals for inference, e.g. wild cluster robust 
 # - Implement support for choosing regression weights 
+# - Check data type of outcome and adjust fam.glmnet; binary: binomial; else: gaussian 
 #
 # ========================================================================================================== #
 # ========================================================================================================== #
@@ -40,6 +41,7 @@ data_dir <- file.path(main_dir,"Data")
 output_dir <- file.path(main_dir,"Output")
 # Set seed 
 seed.set <- 180911 
+set.seed(seed.set)
 
 
 # Functions --------------------------------------------------------------------------------------------------
@@ -58,13 +60,10 @@ clust.se <- function(est.model, cluster){
 
 # Partialling out (first part of DML algorithm) 
 Partial.out <- function(y,x){
-  # Setting up the table  the ranking
-  table.mse <- matrix(NA, nrow = 9, ncol = 4)              
-  #rownames(table.mse)<- c("OLS", "Ridge",  "Elastic Net (alpha = 0.2)", "Elastic Net (alpha = 0.4)", "Elastic Net (alpha = 0.6)" ,"Elastic Net (alpha = 0.8)","Lasso" , "Random Forest", "Gradient Boosting", "Neural Nets")
-  rownames(table.mse)<- c("Ridge",  "Elastic Net (alpha = 0.2)", "Elastic Net (alpha = 0.4)", "Elastic Net (alpha = 0.6)" ,"Elastic Net (alpha = 0.8)","Lasso","Random Forest", "Gradient Boosting", "Neural Nets")
-  colnames(table.mse)<- c("MSE", "lambda", "alpha", "ntree", "Method") 
-  table.mse <- as.data.frame(table.mse)
-  table.mse$Method <- factor(c(1,1,1,1,1,1,2,3,4), labels = c("glmnet", "randomforest", "boost", "nn"))
+  # Setting up the table 
+  columns <- c("MSE", "lambda", "alpha", "mtry", "ntree")  
+  table.mse <- data.frame(matrix(nrow=0, ncol= length(columns)))
+  colnames(table.mse) <- columns
   
   # Sample splitting 80-20
   train <- sample(x = 1:nrow(x), size = dim(x)[1]*0.8) 
@@ -73,6 +72,7 @@ Partial.out <- function(y,x){
   y.train <- y[train]
   x.test <- x[-train,] 
   y.test <- y[-train] 
+  
   
   #### OLS #####
   #Lin.mod <- lm(y.train~., data = data.frame(y.train, x.train[,-1]))
@@ -84,7 +84,6 @@ Partial.out <- function(y,x){
   #### Lasso Elastic Net Ridge ####
   # Set step size for alpha 
   r <- 0.2
-  table.mse$alpha[table.mse$Method=="glmnet"] <- seq(0, 1, r) 
   for (i in seq(0, 1, r)) {
     # 5-fold CV to estimate tuning paramter with the lowest prediction error (could also use e.g. 10 folds)
     cv.out <- cv.glmnet(x.train, y.train, family = "gaussian", nfolds = 10, alpha = i)
@@ -93,44 +92,54 @@ Partial.out <- function(y,x){
     # Get prediction error using the test data
     pred <- predict(cv.out, type = 'response', 
                     s = bestlam, newx = x.test)
-    table.mse$MSE[table.mse$Method == "glmnet" & table.mse$alpha == i] <- mean((pred - y.test)^2) 
-    table.mse$lambda[table.mse$Method == "glmnet" & table.mse$alpha == i, 2] <- bestlam
+    
+    # add NA row and fill sequentially. 
+    table.mse[dim(table.mse)[1]+1,] <- rep(NA, length(columns))
+    if(i==0) {
+      rownames(table.mse)[dim(table.mse)[1]]  <- "Ridge"
+    } else if(i==1) {
+      rownames(table.mse)[dim(table.mse)[1]]  <- "Lasso"
+    } else {
+      rownames(table.mse)[dim(table.mse)[1]]  <- paste0("Elastic Net (alpha=",i, ")")
+    }
+    table.mse$MSE[dim(table.mse)[1]] <- mean((pred - y.test)^2)
+    table.mse$lambda[dim(table.mse)[1]] <- bestlam
+    table.mse$alpha[dim(table.mse)[1]] <- i
     print(paste("Model using alpha =", i, "fitted."))
   }
   
   #### Random Forest ####
+  #### Random Forest ####
   ntree.set <- 5000
-  # Tuning part
-  rf.cv <- rfcv(x.train, y.train, cv.fold = 10, scale = log, step = 0.5)
-  # To Do: Complete rf model selection and prediction 
-  which.min(rf.cv$error.cv) 
+  # Tuning part using rfcv from randomForest 
+  rf.cv <- rfcv(x.train, y.train, cv.fold = 10, tree= ntree.set, scale = "log", step= 0.5)
+  pred <- predict(rf.cv, newdata = x.test, type="response")
   
-  table.mse$MSE[table.mse$Method == "rf"] <- mean((pred - y.test)^2) 
-  #table.mse$mtry[table.mse$Method == "randomforest"] <- which.min(rf.cv$error.cv) 
-  table.mse$ntree[table.mse$Method == "randomforest"] <- ntree.set 
-  
-  #paste(rownames(table.mse)[which.min(table.mse[,1])], "performs best with a MSE of", table.mse[which.min(table.mse[,1]),1], "and a hyperparameter of",table.mse[which.min(table.mse[,1]),2])
-  
-  # Benchmarking: 
-  ## Define best tuning parameters 
-  #opt.lambda <- table.mse$lambda[which.min(table.mse[,1])] 
-  #opt.alpha <- table.mse$alpha[which.min(table.mse[,1])] 
-  #opt.mrty <- which.min(rf.cv$error.cv) 
-  
+  # new NA row for random forest, fill again sequentially 
+  table.mse[dim(table.mse)[1]+1,] <- rep(NA,length(columns)) 
+  rownames(table.mse)[dim(table.mse)[1]]  <- "Random Forest" 
+  table.mse$MSE[dim(table.mse)[1]] <- mean((pred - y.test)^2) 
+  table.mse$mtry[dim(table.mse)[1]] <- rf.cv$n.var[which.min(rf.cv$error.cv)] 
+  table.mse$ntree[dim(table.mse)[1]]<- ntree.set 
+
   # Benchmarking: Select best method based on OOB MSE 
   # (Identify best method directly using method-specific tuning parameters): 
   if (!is.na(table.mse$lambda[which.min(table.mse$MSE)])) { 
+    opt.alpha <- table.mse$alpha[which.min(table.mse$MSE)]
+    opt.lambda <- table.mse$lambda[which.min(table.mse$MSE)]
     best.mod <- glmnet(x, y, 
-                       alpha = table.mse$alpha[which.min(table.mse[,1])], 
-                       lambda = table.mse$lambda[which.min(table.mse[,1])])
+                       alpha = opt.alpha, 
+                       lambda = opt.lambda)
     y.hat <- predict(best.mod, type = 'response', 
-                     s = table.mse$lambda[which.min(table.mse[,1])], 
+                     s = opt.lambda, 
                      newx = x)
   }
-  if (!is.na(table.mse$ntree[which.min(table.mse$MSE)])) { 
+  if (!is.na(table.mse$mtry[which.min(table.mse$MSE)])) { 
+    opt.mtry <- table.mse$mtry[which.min(table.mse$MSE)] 
+    opt.ntree <- table.mse$ntree[which.min(table.mse$MSE)] 
     best.mod <- randomForest(y~., data.frame(y, x), 
-                             ntree = ntree.set,
-                             mtry = which.min(rf.cv$error.cv), 
+                             ntree = opt.ntree,
+                             mtry = opt.mtry, 
                              importance = TRUE)
     y.hat <- predict(best.mod, newdata = data.frame(y, x)) 
   }
@@ -138,40 +147,6 @@ Partial.out <- function(y,x){
   ytil <- (y - y.hat) 
   return(list("ytil" = ytil, 
               "table.mse" = table.mse))
-}
-
-# DML for PLIVM
-DML2.for.PLIVM <- function(x, y, d, z, yreg, dreg, zreg, nfold=2) {
-  # this implements DML2 algorithm. Moments are estimated via DML, randomly split data into folds before 
-  # estimating pooled estimate of theta 
-  nobs <- nrow(x)
-  foldid <- rep.int(1:nfold,times = ceiling(nobs/nfold))[sample.int(nobs)]
-  I <- split(1:nobs, foldid)
-  # code up residualized objects to fill
-  ytil <- dtil <- ztil<- rep(NA, nobs)
-  # get cross-fitted residuals
-  cat("fold: ")
-  for(b in 1:length(I)){
-    # take a fold out 
-    dfit <- dreg(x[-I[[b]],], d[-I[[b]]])  
-    zfit <- zreg(x[-I[[b]],], z[-I[[b]]])  
-    yfit <- yreg(x[-I[[b]],], y[-I[[b]]])  
-    # predict out folds 
-    dhat <- predict(dfit, x[I[[b]],], type="response")  
-    zhat <- predict(zfit, x[I[[b]],], type="response")  
-    yhat <- predict(yfit, x[I[[b]],], type="response")  
-    # save residuals
-    dtil[I[[b]]] <- (d[I[[b]]] - dhat) 
-    ztil[I[[b]]] <- (z[I[[b]]] - zhat) 
-    ytil[I[[b]]] <- (y[I[[b]]] - yhat) 
-    cat(b," ")
-  }
-  ivfit= tsls(y=ytil,d=dtil, x=NULL, z=ztil, intercept=FALSE)
-  # save estimation parameters (i.e. regression coefficients and standard errors)
-  coef.est <-  ivfit$coef 
-  se <-  ivfit$se 
-  cat(sprintf("\ncoef (se) = %g (%g)\n", coef.est , se))
-  return( list(coef.est =coef.est , se=se, dtil=dtil, ytil=ytil, ztil=ztil) )
 }
 
 # Start ==================================================================================================== # 
@@ -224,10 +199,6 @@ x <- model.matrix(~(factor(country) + factor(chbyear) + factor(int_year)), # + s
 x.prelim <- model.matrix(~(sex + chsex + alone + factor(int_year) + chmarried + chdivorce + chwidow + ch200km + chclose + chlescontct + chmuccontct + factor(ch007_) + factor(ch014_) + factor(ch016_) + married + divorce + widow + partnerinhh + factor(ep005_) + poly(agemonth,4) + poly(hhsize,4) + poly(yrseduc,4) + poly(chnchild,4) + factor(chbyear) + factor(country))^2, 
                          data=data.share)
 
-# 1) Lasso 
-yreg <- function(x,y){ rlasso(x, y) } 
-dreg <- function(x,d){ rlasso(x, d) } 
-zreg <- function(x,z){ rlasso(x, z) } 
-
-# Run DML algorithm 
-DML2.lasso <- DML2.for.PLIVM(x, y, d, z, yreg, dreg, zreg, nfold = 2)
+ytil <- Partial.out(y, x)
+dtil <- Partial.out(d, x)
+ztil <- Partial.out(z, x)
