@@ -204,3 +204,22 @@ x.prelim <- model.matrix(~(sex + chsex + alone + factor(int_year) + chmarried + 
 ytil <- Partial.out(y, x)
 dtil <- Partial.out(d, x)
 ztil <- Partial.out(z, x)
+
+# Start: Inference -------------------------------------------------------------------------------------------
+# IV regression using residuals along with wild cluster bootstrap inference 
+# code up dataframe data.til, containing all residuals from partialling out 
+data.til <- data.frame(y = ytil$til, 
+                       d = dtil$til, 
+                       z = ztil$til, 
+                       cluster = as.numeric(factor(data.share$country)))
+ivfit <- ivreg(formula = y ~ d | z, 
+                    data = data.til)
+summ.ivfit <- summary(ivfit)
+summ.ivfit #$coefficients[2,3]
+ivfit.clust <- cluster.wild.ivreg(ivfit, 
+                                  dat = data.til, 
+                                  cluster = ~ cluster, 
+                                  ci.level = 0.95, 
+                                  boot.reps = 1000, 
+                                  seed = seed.set)
+ivfit.clust 
