@@ -153,52 +153,42 @@ Partial.out <- function(y,x){
 
 # Start ==================================================================================================== # 
 # Load data --------------------------------------------------------------------------------------------------
-### To Do: Maybe change syntax for import here 
+### To Do: Maybe change syntax for import here (see haven from Hadley: read_dta())
 data.share <- read.dta13(file.path(data_dir,"share_rel6-1-1_data3.dta")) 
 
 # Some additional pre-processing (select relevant variables, drop missings, recode variables)
-var.select <- c("eurodcat", "chyrseduc", "t_compschool", "sex", "chsex", "alone", "int_year", "chmarried", "chdivorce", "chwidow", "ch200km", "chclose", "chlescontct", "chmuccontct", "ch007_", "ch014_", "ch016_", "married", "divorce", "widow", "partnerinhh", "ep005_", "agemonth", "hhsize", "yrseduc", "chnchild", "chbyear", "country")
+ctrend_1 <- paste0("trend1cntry_", 1:length(unique(data.share$country))) 
+ctrend_2 <- paste0("trend2cntry_", 1:length(unique(data.share$country))) 
+ctrend_3 <- paste0("trend3cntry_", 1:length(unique(data.share$country))) 
+var.select <- c("eurodcat", "chyrseduc", "t_compschool", 
+                "country", "chbyear", "sex", "chsex", "int_year", "agemonth", "yrseduc", 
+                ctrend_1, ctrend_2, ctrend_3, 
+                "normchbyear", "w_ch") 
+
 data.share <- 
   data.share %>% 
   select(var.select) %>% 
   na.omit() %>% 
+  filter(normchbyear %in% c(-10:-1,1:10)) %>% 
   mutate(eurodcat = as.numeric(eurodcat))
 
-# Assign outcome y, treatment d, and instrumental variable z  
+# Implement machine learning methods to get residuals --------------------------------------------------------
+# Define outcome y, treatment d, and instrumental variable z  
 y <- as.matrix(data.share[,"eurodcat"]) 
 d <- as.matrix(data.share[,"chyrseduc"]) 
 z <- as.matrix(data.share[,"t_compschool"]) 
 
-# ++++
-# test: ivreg for cluster robust inference (to do: wrap in function)
-data.share$y <- data.share[,"eurodcat"] 
-data.share$d <- data.share[,"chyrseduc"] 
-data.share$z <- data.share[,"t_compschool"] 
-data.share$cluster <- as.numeric(factor(data.share$country)) 
-test.ivfit <- ivreg(formula = y ~ d | z, 
-                    data = data.share)
-summ.test.ivfit <- summary(test.ivfit)
-summ.test.ivfit #$coefficients[2,3]
-test.ivfit.clust <- cluster.wild.ivreg(test.ivfit, 
-                                       dat = data.share, 
-                                       cluster = ~ cluster, 
-                                       ci.level = 0.95, 
-                                       boot.reps = 1000, 
-                                       seed = seed.set)
-test.ivfit.clust
-# ++++
-
-## define level of clustering standard errors 
-## (not needed when using clusterSEs methods like wild cluster bootstrap)
-#cluster.level <- as.numeric(factor(data.share$country)) 
-
-# Implement machine learning methods to get residuals --------------------------------------------------------
-# Code up model for regularized regression methods 
+# Code up formula for all models 
 # Use this model for testing only (so that code runs faster)
-x <- model.matrix(~(factor(country) + factor(chbyear) + factor(int_year)), # + sex + chsex + factor(ch016_) + poly(agemonth,2) + poly(hhsize,2) + poly(yrseduc,2))^2, 
+x <- model.matrix(~(factor(country) + factor(chbyear) + factor(int_year)), 
                   data=data.share)
 # Basic model for actual preliminary analyses 
-x.prelim <- model.matrix(~(sex + chsex + alone + factor(int_year) + chmarried + chdivorce + chwidow + ch200km + chclose + chlescontct + chmuccontct + factor(ch007_) + factor(ch014_) + factor(ch016_) + married + divorce + widow + partnerinhh + factor(ep005_) + poly(agemonth,4) + poly(hhsize,4) + poly(yrseduc,4) + poly(chnchild,4) + factor(chbyear) + factor(country))^2, 
+x.formula <- as.formula(paste0("~(-1 + factor(country) + factor(chbyear) + factor(sex) + factor(chsex) + factor(int_year) + poly(agemonth,2) + ploy(yrseduc,2) + ", 
+                               paste(ctrend_1, collapse = " + "), " + ", 
+                               paste(ctrend_2, collapse = " + "), " + ", 
+                               paste(ctrend_3, collapse = " + "), 
+                               ")"))
+x.prelim <- model.matrix(x.formula, 
                          data=data.share)
 
 ytil <- Partial.out(y, x)
@@ -223,3 +213,27 @@ ivfit.clust <- cluster.wild.ivreg(ivfit,
                                   boot.reps = 1000, 
                                   seed = seed.set)
 ivfit.clust 
+
+
+
+# ++++
+# test: ivreg for cluster robust inference (to do: wrap in function)
+data.share$y <- data.share[,"eurodcat"] 
+data.share$d <- data.share[,"chyrseduc"] 
+data.share$z <- data.share[,"t_compschool"] 
+data.share$cluster <- as.numeric(factor(data.share$country)) 
+test.ivfit <- ivreg(formula = y ~ d | z, 
+                    data = data.share)
+summ.test.ivfit <- summary(test.ivfit)
+summ.test.ivfit #$coefficients[2,3]
+test.ivfit.clust <- cluster.wild.ivreg(test.ivfit, 
+                                       dat = data.share, 
+                                       cluster = ~ cluster, 
+                                       ci.level = 0.95, 
+                                       boot.reps = 1000, 
+                                       seed = seed.set)
+test.ivfit.clust
+## define level of clustering standard errors 
+## (not needed when using clusterSEs methods like wild cluster bootstrap)
+#cluster.level <- as.numeric(factor(data.share$country)) 
+# ++++
