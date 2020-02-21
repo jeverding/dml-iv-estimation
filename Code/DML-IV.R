@@ -28,7 +28,7 @@ library(rpart)
 library(rpart.plot)
 library(gbm)
 library(foreign)
-library(readstata13)
+library(haven)
 library(sandwich)
 library(AER)
 library(clusterSEs)
@@ -153,8 +153,7 @@ Partial.out <- function(y,x){
 
 # Start ==================================================================================================== # 
 # Load data --------------------------------------------------------------------------------------------------
-### To Do: Maybe change syntax for import here (see haven from Hadley: read_dta())
-data.share <- read.dta13(file.path(data_dir,"share_rel6-1-1_data3.dta")) 
+data.share <- read_dta(file.path(data_dir,"share_rel6-1-1_data3.dta")) 
 
 # Some additional pre-processing (select relevant variables, drop missings, recode variables)
 ctrend_1 <- paste0("trend1cntry_", 1:length(unique(data.share$country))) 
@@ -183,7 +182,7 @@ z <- as.matrix(data.share[,"t_compschool"])
 x <- model.matrix(~(factor(country) + factor(chbyear) + factor(int_year)), 
                   data=data.share)
 # Basic model for actual preliminary analyses 
-x.formula <- as.formula(paste0("~(-1 + factor(country) + factor(chbyear) + factor(sex) + factor(chsex) + factor(int_year) + poly(agemonth,2) + ploy(yrseduc,2) + ", 
+x.formula <- as.formula(paste0("~(-1 + factor(country) + factor(chbyear) + factor(sex) + factor(chsex) + factor(int_year) + poly(agemonth,2) + poly(yrseduc,2) + ", 
                                paste(ctrend_1, collapse = " + "), " + ", 
                                paste(ctrend_2, collapse = " + "), " + ", 
                                paste(ctrend_3, collapse = " + "), 
