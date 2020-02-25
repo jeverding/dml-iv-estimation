@@ -114,7 +114,7 @@ Partial.out <- function(y,x){
   # Tuning part using rfcv from randomForest 
   rf.cv <- rfcv(x.train, y.train, cv.fold = 10, tree= ntree.set, scale = "log", step= 0.5)
   # fitting the random forest using the best mtry
-  rf <- randomForest(x.train, y.train, ntree = n.tree, mtry = rf.cv$n.var[which.min(rf.cv$error.cv)])
+  rf <- randomForest(x.train, y.train, ntree = ntree.set, mtry = rf.cv$n.var[which.min(rf.cv$error.cv)])
   pred <- predict(rf, newdata = x.test, type="response")
   
   # new NA row for random forest, fill again sequentially 
@@ -143,7 +143,7 @@ Partial.out <- function(y,x){
                              ntree = opt.ntree,
                              mtry = opt.mtry, 
                              importance = TRUE)
-    y.hat <- predict(best.mod, newdata = x) #data.frame(y, x)) 
+    y.hat <- predict(best.mod, newdata = data.frame(y, x)) 
   }
   
   ytil <- (y - y.hat) 
