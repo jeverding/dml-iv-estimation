@@ -200,9 +200,11 @@ ztil <- Partial.out(z, x)
 data.til <- data.frame(y = ytil$til, 
                        d = dtil$til, 
                        z = ztil$til, 
-                       cluster = as.numeric(factor(data.share$country)))
+                       cluster = as.numeric(factor(data.share$country)), 
+                       wght = data.share$w_ch)
 ivfit <- ivreg(formula = y ~ d | z, 
-                    data = data.til)
+               weights = wght, 
+               data = data.til)
 summ.ivfit <- summary(ivfit)
 summ.ivfit #$coefficients[2,3]
 ivfit.clust <- cluster.wild.ivreg(ivfit, 
