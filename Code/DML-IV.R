@@ -63,9 +63,8 @@ partial.out <- function(y,x){
   table.mse <- data.frame(matrix(nrow=0, ncol= length(columns)))
   colnames(table.mse) <- columns
   
-  # Sample splitting 80-20
+  # Split data in 80% training and 20 % test data 
   train <- sample(x = 1:nrow(x), size = dim(x)[1]*0.8) 
-  # Split data in 80% training and 20 % test data. Leaving out the 1 vector because glmnet will automatically estimate the intercept.  
   x.train <- x[train,]
   y.train <- y[train]
   x.test <- x[-train,] 
