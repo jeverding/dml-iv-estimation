@@ -4,12 +4,10 @@
 # Double Machine Learning for IV estimation 
 #
 # This script implements the double machine learning (DML) approach to conduct causal inference. The script 
-# defines functions which allow to sequentially execute the different DML steps and estimate instrumenal 
-# variables regressions eventually. 
+# defines functions which allow to sequentially execute the different DML steps and estimate instrumental 
+# variables regressions eventually. Supports weighted regressions and wild cluster bootstrapped inference. 
 #
 # To Do: 
-# - Estimation of various standard errors/confidence intervals for inference, e.g. wild cluster robust 
-# - Implement support for choosing regression weights 
 # - Check data type of outcome and adjust fam.glmnet; binary: binomial; else: gaussian 
 # - Implement GBM for partialling out / model selection 
 #
@@ -46,8 +44,7 @@ set.seed(seed.set)
 
 
 # Functions --------------------------------------------------------------------------------------------------
-# Clustering standard errors
-# Traditional approach. Not needed for wild cluster bootstrap inf. 
+# Clustering standard errors (traditional approach. Not needed for wild cluster bootstrap inf.) 
 clust.se <- function(est.model, cluster){
   G <- length(unique(cluster))
   N <- length(cluster)
@@ -60,7 +57,7 @@ clust.se <- function(est.model, cluster){
 }
 
 # Partialling out (first part of DML algorithm) 
-Partial.out <- function(y,x){
+partial.out <- function(y,x){
   # Setting up the table 
   columns <- c("MSE", "lambda", "alpha", "mtry", "ntree")  
   table.mse <- data.frame(matrix(nrow=0, ncol= length(columns)))
@@ -190,9 +187,9 @@ x.formula <- as.formula(paste0("~(-1 + factor(country) + factor(chbyear) + facto
 x.prelim <- model.matrix(x.formula, 
                          data=data.share)
 
-ytil <- Partial.out(y, x)
-dtil <- Partial.out(d, x)
-ztil <- Partial.out(z, x)
+ytil <- partial.out(y, x)
+dtil <- partial.out(d, x)
+ztil <- partial.out(z, x)
 
 # Start: Inference -------------------------------------------------------------------------------------------
 # IV regression using residuals along with wild cluster bootstrap inference 
