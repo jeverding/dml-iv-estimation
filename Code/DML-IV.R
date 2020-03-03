@@ -9,6 +9,7 @@
 #
 # To Do: 
 # - Check data type of outcome and adjust fam.glmnet; binary: binomial; else: gaussian 
+# - Implement more comprehensive grid search for random forest hyperparameter tuning 
 # - Implement GBM for partialling out / model selection 
 #
 # ========================================================================================================== #
@@ -26,6 +27,7 @@ library(ranger)
 library(rpart)
 library(rpart.plot)
 library(gbm)
+library(xgboost)
 library(foreign)
 library(haven)
 library(sandwich)
@@ -116,11 +118,6 @@ partial.out <- function(y,x){
                        )) 
   } 
   for (i in 1:length(mtry.seq)) {
-    # Alternatively to ranger, use randomForest (less computaltionally effcient) 
-    #rf <- randomForest(x.train, y.train, 
-    #                   ntree = ntree.set, 
-    #                   mtry = mtry.seq[i]) 
-    #pred <- predict(rf, newdata = x.test, type="response") 
     rf <- ranger(x = x.train, y = y.train, 
                  num.trees = ntree.set, 
                  mtry = mtry.seq[i]) 
@@ -153,12 +150,6 @@ partial.out <- function(y,x){
   if (!is.na(table.mse$mtry[which.min(table.mse$MSE)])) { 
     opt.mtry <- table.mse$mtry[which.min(table.mse$MSE)] 
     opt.ntree <- table.mse$ntree[which.min(table.mse$MSE)] 
-    # Alternatively to ranger, use randomForest (less computaltionally effcient) 
-    #best.mod <- randomForest(y~., data.frame(y, x), 
-    #                         ntree = opt.ntree,
-    #                         mtry = opt.mtry, 
-    #                         importance = TRUE)
-    #y.hat <- predict(best.mod, newdata = data.frame(y, x)) 
     best.mod <- ranger(x = x, y = y, 
                        num.trees = opt.ntree, 
                        mtry = opt.mtry) 
@@ -198,20 +189,28 @@ z <- as.matrix(data.share[,"t_compschool"])
 
 # Code up formula for all models 
 # Use this model for testing only (so that code runs faster)
-x <- model.matrix(~(-1 + factor(country) + factor(chbyear) + factor(int_year)), 
-                  data=data.share)
+#x <- model.matrix(~(-1 + factor(country) + factor(chbyear) + factor(int_year)), 
+#                  data=data.share)
 # Basic model for actual preliminary analyses 
 x.formula <- as.formula(paste0("~(-1 + factor(country) + factor(chbyear) + factor(sex) + factor(chsex) + factor(int_year) + poly(agemonth,2) + poly(yrseduc,2) + ", 
                                paste(ctrend_1, collapse = " + "), " + ", 
                                paste(ctrend_2, collapse = " + "), " + ", 
                                paste(ctrend_3, collapse = " + "), 
                                ")"))
-x.prelim <- model.matrix(x.formula, 
-                         data=data.share)
+x <- model.matrix(x.formula, 
+                  data=data.share)
 
+# Check running time 
+start_time <- Sys.time()
 ytil <- partial.out(y, x)
+y_end_time <- Sys.time() 
 dtil <- partial.out(d, x)
-ztil <- partial.out(z, x)
+d_end_time <- Sys.time() 
+ztil <- partial.out(z, x) 
+z_end_time <- Sys.time() 
+y_end_time - start_time 
+d_end_time - start_time 
+z_end_time - start_time 
 
 # Start: Inference -------------------------------------------------------------------------------------------
 # IV regression using residuals along with wild cluster bootstrap inference 
