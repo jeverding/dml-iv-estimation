@@ -22,6 +22,7 @@ library(hdm)
 library(glmnet)
 library(nnet)
 library(randomForest)
+library(ranger)
 library(rpart)
 library(rpart.plot)
 library(gbm)
@@ -102,24 +103,41 @@ partial.out <- function(y,x){
     table.mse$MSE[dim(table.mse)[1]] <- mean((pred - y.test)^2)
     table.mse$lambda[dim(table.mse)[1]] <- bestlam
     table.mse$alpha[dim(table.mse)[1]] <- i
-    print(paste("Model using alpha =", i, "fitted."))
+    print(paste("glmnet using alpha =", i, "fitted."))
   }
   
   #### Random Forest ####
-  ntree.set <- 5000
-  # Tuning part using rfcv from randomForest 
-  rf.cv <- rfcv(x.train, y.train, cv.fold = 5, mtry = function(p) max(1, floor(sqrt(p))), ntree = ntree.set, scale = "log", step= 0.5)
-  # fitting the random forest using the best mtry
-  rf <- randomForest(x.train, y.train, ntree = ntree.set, mtry = rf.cv$n.var[which.min(rf.cv$error.cv)])
-  pred <- predict(rf, newdata = x.test, type="response")
+  ntree.set <- 5000 
+  # Use different mtrys, eventually select best RF model 
+  mtry.seq <- seq(from = 2, to = floor(sqrt(ncol(x.train)))*2, by = 2)
+  if (!floor(sqrt(ncol(x.train))) %in% mtry.seq) {
+    mtry.seq <- sort(c(mtry.seq, 
+                       floor(sqrt(ncol(x.train)))
+                       )) 
+  } 
+  for (i in 1:length(mtry.seq)) {
+    # Alternatively to ranger, use randomForest (less computaltionally effcient) 
+    #rf <- randomForest(x.train, y.train, 
+    #                   ntree = ntree.set, 
+    #                   mtry = mtry.seq[i]) 
+    #pred <- predict(rf, newdata = x.test, type="response") 
+    rf <- ranger(x = x.train, y = y.train, 
+                 num.trees = ntree.set, 
+                 mtry = mtry.seq[i]) 
+    pred <- predict(rf, data = x.test, type="response")$predictions 
+    
+    # new NA row for random forest, fill again sequentially 
+    table.mse[dim(table.mse)[1]+1,] <- rep(NA,length(columns)) 
+    rownames(table.mse)[dim(table.mse)[1]]  <- paste0("Random Forest (no. ", i, "/", length(mtry.seq), ")") 
+    table.mse$MSE[dim(table.mse)[1]] <- mean((pred - y.test)^2) 
+    table.mse$mtry[dim(table.mse)[1]] <- mtry.seq[i] 
+    table.mse$ntree[dim(table.mse)[1]]<- ntree.set 
+    print(paste0("RF (ranger) no. ", i, "/", length(mtry.seq), " fitted."))
+  }
   
-  # new NA row for random forest, fill again sequentially 
-  table.mse[dim(table.mse)[1]+1,] <- rep(NA,length(columns)) 
-  rownames(table.mse)[dim(table.mse)[1]]  <- "Random Forest" 
-  table.mse$MSE[dim(table.mse)[1]] <- mean((pred - y.test)^2) 
-  table.mse$mtry[dim(table.mse)[1]] <- rf.cv$n.var[which.min(rf.cv$error.cv)] 
-  table.mse$ntree[dim(table.mse)[1]]<- ntree.set 
-
+  #### Gradient Boosting ####
+  # include xgb here 
+  
   # Benchmarking: Select best method based on OOB MSE 
   # (Identify best method directly using method-specific tuning parameters): 
   if (!is.na(table.mse$lambda[which.min(table.mse$MSE)])) { 
@@ -135,11 +153,16 @@ partial.out <- function(y,x){
   if (!is.na(table.mse$mtry[which.min(table.mse$MSE)])) { 
     opt.mtry <- table.mse$mtry[which.min(table.mse$MSE)] 
     opt.ntree <- table.mse$ntree[which.min(table.mse$MSE)] 
-    best.mod <- randomForest(y~., data.frame(y, x), 
-                             ntree = opt.ntree,
-                             mtry = opt.mtry, 
-                             importance = TRUE)
-    y.hat <- predict(best.mod, newdata = data.frame(y, x)) 
+    # Alternatively to ranger, use randomForest (less computaltionally effcient) 
+    #best.mod <- randomForest(y~., data.frame(y, x), 
+    #                         ntree = opt.ntree,
+    #                         mtry = opt.mtry, 
+    #                         importance = TRUE)
+    #y.hat <- predict(best.mod, newdata = data.frame(y, x)) 
+    best.mod <- ranger(x = x, y = y, 
+                       num.trees = opt.ntree, 
+                       mtry = opt.mtry) 
+    y.hat <- predict(best.mod, data = x, type="response")$predictions 
   }
   
   ytil <- (y - y.hat) 
@@ -175,7 +198,7 @@ z <- as.matrix(data.share[,"t_compschool"])
 
 # Code up formula for all models 
 # Use this model for testing only (so that code runs faster)
-x <- model.matrix(~(factor(country) + factor(chbyear) + factor(int_year)), 
+x <- model.matrix(~(-1 + factor(country) + factor(chbyear) + factor(int_year)), 
                   data=data.share)
 # Basic model for actual preliminary analyses 
 x.formula <- as.formula(paste0("~(-1 + factor(country) + factor(chbyear) + factor(sex) + factor(chsex) + factor(int_year) + poly(agemonth,2) + poly(yrseduc,2) + ", 
