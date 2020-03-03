@@ -9,6 +9,7 @@
 #
 # To Do: 
 # - Check data type of outcome and adjust fam.glmnet; binary: binomial; else: gaussian 
+# - Implement RF using ranger 
 # - Implement GBM for partialling out / model selection 
 #
 # ========================================================================================================== #
@@ -22,6 +23,7 @@ library(hdm)
 library(glmnet)
 library(nnet)
 library(randomForest)
+library(ranger)
 library(rpart)
 library(rpart.plot)
 library(gbm)
@@ -108,15 +110,17 @@ partial.out <- function(y,x){
   #### Random Forest ####
   ntree.set <- 5000 
   # Use different mtrys, eventually select best RF model 
-  mtry.seq <- seq(from = floor(sqrt(ncol(x.train)))*2, to = 2, by = -2)
+  mtry.seq <- seq(from = 2, to = floor(sqrt(ncol(x.train)))*2, by = 2)
   if (!floor(sqrt(ncol(x.train))) %in% mtry.seq) {
-    mtry.seq <- sort(c(mtry.seq, floor(sqrt(ncol(x.train)))), decreasing = TRUE) 
+    mtry.seq <- sort(c(mtry.seq, 
+                       floor(sqrt(ncol(x.train)))
+                       )) 
   } 
   for (i in 1:length(mtry.seq)) {
     rf <- randomForest(x.train, y.train, 
                        ntree = ntree.set, 
                        mtry = mtry.seq[i]) 
-    # TO DO: implement rf using ranger 
+    # TO DO: implement RF using ranger 
     pred <- predict(rf, newdata = x.test, type="response") 
     
     # new NA row for random forest, fill again sequentially 
