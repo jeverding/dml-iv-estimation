@@ -108,7 +108,7 @@ partial.out <- function(y,x){
   #### Random Forest ####
   ntree.set <- 5000
   # Tuning part using rfcv from randomForest 
-  rf.cv <- rfcv(x.train, y.train, cv.fold = 10, tree= ntree.set, scale = "log", step= 0.5)
+  rf.cv <- rfcv(x.train, y.train, cv.fold = 5, mtry = function(p) max(1, floor(sqrt(p))), ntree = ntree.set, scale = "log", step= 0.5)
   # fitting the random forest using the best mtry
   rf <- randomForest(x.train, y.train, ntree = ntree.set, mtry = rf.cv$n.var[which.min(rf.cv$error.cv)])
   pred <- predict(rf, newdata = x.test, type="response")
