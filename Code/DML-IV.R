@@ -128,12 +128,15 @@ partial.out <- function(y,x){
     
     # new NA row for random forest, fill again sequentially 
     table.mse[dim(table.mse)[1]+1,] <- rep(NA,length(columns)) 
-    rownames(table.mse)[dim(table.mse)[1]]  <- paste0("Random Forest, no. ", i, "/", length(mtry.seq)) 
+    rownames(table.mse)[dim(table.mse)[1]]  <- paste0("Random Forest (no. ", i, "/", length(mtry.seq), ")") 
     table.mse$MSE[dim(table.mse)[1]] <- mean((pred - y.test)^2) 
     table.mse$mtry[dim(table.mse)[1]] <- mtry.seq[i] 
     table.mse$ntree[dim(table.mse)[1]]<- ntree.set 
     print(paste0("RF (ranger) no. ", i, "/", length(mtry.seq), " fitted."))
   }
+  
+  #### Gradient Boosting ####
+  # include xgb here 
   
   # Benchmarking: Select best method based on OOB MSE 
   # (Identify best method directly using method-specific tuning parameters): 
