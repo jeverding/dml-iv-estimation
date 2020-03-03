@@ -106,20 +106,27 @@ partial.out <- function(y,x){
   }
   
   #### Random Forest ####
-  ntree.set <- 5000
-  # Tuning part using rfcv from randomForest 
-  rf.cv <- rfcv(x.train, y.train, cv.fold = 5, mtry = function(p) max(1, floor(sqrt(p))), ntree = ntree.set, scale = "log", step= 0.5)
-  # fitting the random forest using the best mtry
-  rf <- randomForest(x.train, y.train, ntree = ntree.set, mtry = rf.cv$n.var[which.min(rf.cv$error.cv)])
-  pred <- predict(rf, newdata = x.test, type="response")
+  ntree.set <- 5000 
+  # Use different mtrys, eventually select best RF model 
+  mtry.seq <- seq(from = floor(sqrt(ncol(x.train)))*2, to = 2, by = -2)
+  if (!floor(sqrt(ncol(x.train))) %in% mtry.seq) {
+    mtry.seq <- sort(c(mtry.seq, floor(sqrt(ncol(x.train)))), decreasing = TRUE) 
+  } 
+  for (i in 1:length(mtry.seq)) {
+    rf <- randomForest(x.train, y.train, 
+                       ntree = ntree.set, 
+                       mtry = mtry.seq[i]) 
+    # TO DO: implement rf using ranger 
+    pred <- predict(rf, newdata = x.test, type="response") 
+    
+    # new NA row for random forest, fill again sequentially 
+    table.mse[dim(table.mse)[1]+1,] <- rep(NA,length(columns)) 
+    rownames(table.mse)[dim(table.mse)[1]]  <- "Random Forest" 
+    table.mse$MSE[dim(table.mse)[1]] <- mean((pred - y.test)^2) 
+    table.mse$mtry[dim(table.mse)[1]] <- mtry.seq[i] 
+    table.mse$ntree[dim(table.mse)[1]]<- ntree.set 
+  }
   
-  # new NA row for random forest, fill again sequentially 
-  table.mse[dim(table.mse)[1]+1,] <- rep(NA,length(columns)) 
-  rownames(table.mse)[dim(table.mse)[1]]  <- "Random Forest" 
-  table.mse$MSE[dim(table.mse)[1]] <- mean((pred - y.test)^2) 
-  table.mse$mtry[dim(table.mse)[1]] <- rf.cv$n.var[which.min(rf.cv$error.cv)] 
-  table.mse$ntree[dim(table.mse)[1]]<- ntree.set 
-
   # Benchmarking: Select best method based on OOB MSE 
   # (Identify best method directly using method-specific tuning parameters): 
   if (!is.na(table.mse$lambda[which.min(table.mse$MSE)])) { 
