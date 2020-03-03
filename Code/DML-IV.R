@@ -121,11 +121,14 @@ partial.out <- function(y,x){
                        ntree = ntree.set, 
                        mtry = mtry.seq[i]) 
     # TO DO: implement RF using ranger 
+    #rf <- ranger(x = x.train, y = y.train, 
+    #             num.trees = ntree.set, 
+    #             mtry = mtry.seq[i]) 
     pred <- predict(rf, newdata = x.test, type="response") 
     
     # new NA row for random forest, fill again sequentially 
     table.mse[dim(table.mse)[1]+1,] <- rep(NA,length(columns)) 
-    rownames(table.mse)[dim(table.mse)[1]]  <- "Random Forest" 
+    rownames(table.mse)[dim(table.mse)[1]]  <- paste0("Random Forest, no. ", i, "/", length(mtry.seq)) 
     table.mse$MSE[dim(table.mse)[1]] <- mean((pred - y.test)^2) 
     table.mse$mtry[dim(table.mse)[1]] <- mtry.seq[i] 
     table.mse$ntree[dim(table.mse)[1]]<- ntree.set 
