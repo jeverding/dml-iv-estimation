@@ -9,7 +9,7 @@
 #
 # To Do: 
 # - Check data type of outcome and adjust fam.glmnet; binary: binomial; else: gaussian 
-# - Implement GBM for partialling out / model selection 
+# - Implement more comprehensive grid search for random forest hyperparameter tuning 
 #
 # ========================================================================================================== #
 # ========================================================================================================== #
@@ -26,6 +26,7 @@ library(ranger)
 library(rpart)
 library(rpart.plot)
 library(gbm)
+library(xgboost)
 library(foreign)
 library(haven)
 library(sandwich)
@@ -60,12 +61,16 @@ clust.se <- function(est.model, cluster){
 # Partialling out (first part of DML algorithm) 
 partial.out <- function(y,x){
   # Setting up the table 
-  columns <- c("MSE", "lambda", "alpha", "mtry", "ntree")  
+  columns <- c("MSE", 
+               "lambda", "alpha", # For elastic net 
+               "mtry", "ntree", # For random forest (ranger) 
+               "iterations", "learn_rate", "max_depth", "gamma", "frac_subsample", "colsample_bytree" # For gradient boosting (xgb) 
+               )  
   table.mse <- data.frame(matrix(nrow=0, ncol= length(columns)))
   colnames(table.mse) <- columns
   
-  # Split data in 80% training and 20 % test data 
-  train <- sample(x = 1:nrow(x), size = dim(x)[1]*0.8) 
+  # Split data in 80% training and 20% test data 
+  train <- sample(x = 1:nrow(x), size = nrow(x)*0.8) 
   x.train <- x[train,]
   y.train <- y[train]
   x.test <- x[-train,] 
@@ -79,11 +84,11 @@ partial.out <- function(y,x){
   #table.mse[1,1] <- mean((predict.lm(Lin.mod, as.data.frame(x.test[,-1])) - y.test)^2)
   #table.mse[1,2] <- "-"
   
-  #### Lasso Elastic Net Ridge ####
+  #### Elastic Net (incl. Lasso, Ridge) ####
   # Set step size for alpha 
   r <- 0.2
   for (i in seq(0, 1, r)) {
-    # 5-fold CV to estimate tuning paramter with the lowest prediction error (could also use e.g. 10 folds)
+    # 10-fold CV to estimate tuning paramter with the lowest prediction error 
     cv.out <- cv.glmnet(x.train, y.train, family = "gaussian", nfolds = 10, alpha = i)
     # Select lambda (here: 1se instead of min.) 
     bestlam <- cv.out$lambda.1se
@@ -108,7 +113,7 @@ partial.out <- function(y,x){
   
   #### Random Forest ####
   ntree.set <- 5000 
-  # Use different mtrys, eventually select best RF model 
+  # Test different mtrys (hyperparameter), eventually select best RF model 
   mtry.seq <- seq(from = 2, to = floor(sqrt(ncol(x.train)))*2, by = 2)
   if (!floor(sqrt(ncol(x.train))) %in% mtry.seq) {
     mtry.seq <- sort(c(mtry.seq, 
@@ -116,11 +121,6 @@ partial.out <- function(y,x){
                        )) 
   } 
   for (i in 1:length(mtry.seq)) {
-    # Alternatively to ranger, use randomForest (less computaltionally effcient) 
-    #rf <- randomForest(x.train, y.train, 
-    #                   ntree = ntree.set, 
-    #                   mtry = mtry.seq[i]) 
-    #pred <- predict(rf, newdata = x.test, type="response") 
     rf <- ranger(x = x.train, y = y.train, 
                  num.trees = ntree.set, 
                  mtry = mtry.seq[i]) 
@@ -135,11 +135,80 @@ partial.out <- function(y,x){
     print(paste0("RF (ranger) no. ", i, "/", length(mtry.seq), " fitted."))
   }
   
-  #### Gradient Boosting ####
-  # include xgb here 
+  #### Gradient Boosting (XGB) ####
+  # Hyperparameter tuning 
+  xgb.grid <- expand.grid(nrounds = 20000, 
+                          eta = c(0.01, 0.1, 0.2, 0.3), #eta = c(0.01, 0.05, 0.1, 0.2, 0.3), 
+                          max_depth = c(1, 3, 5), #max_depth = c(1, 2, 3, 5), 
+                          gamma = 0, 
+                          #min_child_weight = c(1, 3, 5, 7), 
+                          subsample = c(0.5, 0.75, 1),
+                          colsample_bytree = c(0.8, 1), 
+                          opt.trees = NA,               # save results here 
+                          min.RMSE = NA                 # save results here 
+                          )
+  # Start: XGB grid search 
+  for(i in 1:nrow(xgb.grid)) {
+    # Create parameter list
+    params <- list(nrounds = xgb.grid$nrounds[i], 
+                   eta = xgb.grid$eta[i], 
+                   max_depth = xgb.grid$max_depth[i], 
+                   gamma = xgb.grid$gamma[i], 
+                   #min_child_weight = xgb.grid$min_child_weight[i], 
+                   subsample = xgb.grid$subsample[i], 
+                   colsample_bytree = xgb.grid$colsample_bytree[i]) 
+    
+    # Tune model using 5-fold cv 
+    xgb.tune <- xgb.cv(params = params, 
+                       data = x.train, 
+                       label = y.train, 
+                       nrounds = params$nrounds, 
+                       nfold = 5, 
+                       objective = "reg:linear",  # for regression models 
+                       early_stopping_rounds = 100, # stop if no improvement for 100 consecutive trees 
+                       print_every_n = 500, 
+                       eval_metric = "rmse")
+    
+    # Save results (number of trees/iterations and training error) to grid 
+    xgb.grid$opt.trees[i] <- which.min(xgb.tune$evaluation_log$test_rmse_mean)
+    xgb.grid$min.RMSE[i] <- min(xgb.tune$evaluation_log$test_rmse_mean)
+  } # End: XGB grid search 
+  
+  # Learn final model with optimal parameters on whole training data 
+  # Create parameter list 
+  params <- list(nrounds = xgb.grid$opt.trees[which.min(xgb.grid$min.RMSE)], 
+                 eta = xgb.grid$eta[which.min(xgb.grid$min.RMSE)], 
+                 max_depth = xgb.grid$max_depth[which.min(xgb.grid$min.RMSE)], 
+                 gamma = xgb.grid$gamma[which.min(xgb.grid$min.RMSE)], 
+                 #min_child_weight = xgb.grid$min_child_weight[which.min(xgb.grid$min.RMSE)], 
+                 subsample = xgb.grid$subsample[which.min(xgb.grid$min.RMSE)], 
+                 colsample_bytree = xgb.grid$colsample_bytree[which.min(xgb.grid$min.RMSE)]) 
+  # Train final model w/ cross-validated hyperparameters 
+  xgb.trained <- xgb.train(params = params, 
+                           data = xgb.DMatrix(x.train, 
+                                              label = y.train), 
+                           nrounds = params$nrounds, 
+                           objective = "reg:linear",  # for regression models 
+                           eval_metric = "rmse") 
+  # Predict test data using trained final model 
+  pred <- predict(xgb.trained, newdata = x.test) 
+  
+  # new NA row for extreme gradient boosting, fill again sequentially 
+  table.mse[dim(table.mse)[1]+1,] <- rep(NA,length(columns)) 
+  rownames(table.mse)[dim(table.mse)[1]]  <- paste0("Extreme Gradient Boosting") 
+  table.mse$MSE[dim(table.mse)[1]] <- mean((pred - y.test)^2) 
+  table.mse$iterations[dim(table.mse)[1]] <- params$nrounds 
+  table.mse$learn_rate[dim(table.mse)[1]]<- params$eta 
+  table.mse$max_depth[dim(table.mse)[1]]<- params$max_depth 
+  table.mse$gamma[dim(table.mse)[1]]<- params$gamma 
+  table.mse$frac_subsample[dim(table.mse)[1]]<- params$subsample 
+  table.mse$colsample_bytree[dim(table.mse)[1]]<- params$colsample_bytree 
+  print("XGB fitted.") 
+  
   
   # Benchmarking: Select best method based on OOB MSE 
   # (Identify best method directly using method-specific tuning parameters): 
+  # Elnet 
   if (!is.na(table.mse$lambda[which.min(table.mse$MSE)])) { 
     opt.alpha <- table.mse$alpha[which.min(table.mse$MSE)]
     opt.lambda <- table.mse$lambda[which.min(table.mse$MSE)]
@@ -150,19 +219,26 @@ partial.out <- function(y,x){
                      s = opt.lambda, 
                      newx = x)
   }
+  # RF 
   if (!is.na(table.mse$mtry[which.min(table.mse$MSE)])) { 
     opt.mtry <- table.mse$mtry[which.min(table.mse$MSE)] 
     opt.ntree <- table.mse$ntree[which.min(table.mse$MSE)] 
-    # Alternatively to ranger, use randomForest (less computaltionally effcient) 
-    #best.mod <- randomForest(y~., data.frame(y, x), 
-    #                         ntree = opt.ntree,
-    #                         mtry = opt.mtry, 
-    #                         importance = TRUE)
-    #y.hat <- predict(best.mod, newdata = data.frame(y, x)) 
     best.mod <- ranger(x = x, y = y, 
                        num.trees = opt.ntree, 
                        mtry = opt.mtry) 
     y.hat <- predict(best.mod, data = x, type="response")$predictions 
+  }
+  # XGBoost 
+  # (No need to specify hyperparameters again, as only the best xgb model is written to table. 
+  # Hence, its hyperparameters can still be directly called from params-list.) 
+  if (!is.na(table.mse$learn_rate[which.min(table.mse$MSE)])) { 
+    best.mod <- xgb.train(params = params, 
+                          data = xgb.DMatrix(x, 
+                                             label = y), 
+                          nrounds = params$nrounds, 
+                          objective = "reg:linear",  # for regression models 
+                          eval_metric = "rmse") 
+    y.hat <- predict(best.mod, newdata = x) 
   }
   
   ytil <- (y - y.hat) 
@@ -198,20 +274,28 @@ z <- as.matrix(data.share[,"t_compschool"])
 
 # Code up formula for all models 
 # Use this model for testing only (so that code runs faster)
-x <- model.matrix(~(-1 + factor(country) + factor(chbyear) + factor(int_year)), 
-                  data=data.share)
+#x <- model.matrix(~(-1 + factor(country) + factor(chbyear) + factor(int_year)), 
+#                  data=data.share)
 # Basic model for actual preliminary analyses 
 x.formula <- as.formula(paste0("~(-1 + factor(country) + factor(chbyear) + factor(sex) + factor(chsex) + factor(int_year) + poly(agemonth,2) + poly(yrseduc,2) + ", 
                                paste(ctrend_1, collapse = " + "), " + ", 
                                paste(ctrend_2, collapse = " + "), " + ", 
                                paste(ctrend_3, collapse = " + "), 
                                ")"))
-x.prelim <- model.matrix(x.formula, 
-                         data=data.share)
+x <- model.matrix(x.formula, 
+                  data=data.share) 
 
+# Check running time 
+start_time <- Sys.time()
 ytil <- partial.out(y, x)
+y_end_time <- Sys.time() 
+y_end_time - start_time 
 dtil <- partial.out(d, x)
-ztil <- partial.out(z, x)
+d_end_time <- Sys.time() 
+d_end_time - start_time 
+ztil <- partial.out(z, x) 
+z_end_time <- Sys.time() 
+z_end_time - start_time 
 
 # Start: Inference -------------------------------------------------------------------------------------------
 # IV regression using residuals along with wild cluster bootstrap inference 
