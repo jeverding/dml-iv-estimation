@@ -10,7 +10,7 @@
 # To Do: 
 # - Check data type of outcome and adjust fam.glmnet; binary: binomial; else: gaussian 
 # - Implement more comprehensive grid search for random forest hyperparameter tuning 
-# - Implement GBM (more precisely, XGB) for partialling out / model selection 
+# - Implement gradient boosting (XGB) for partialling out / model selection 
 #
 # ========================================================================================================== #
 # ========================================================================================================== #
@@ -70,7 +70,7 @@ partial.out <- function(y,x){
   table.mse <- data.frame(matrix(nrow=0, ncol= length(columns)))
   colnames(table.mse) <- columns
   
-  # Split data in 80% training and 20 % test data 
+  # Split data in 80% training and 20% test data 
   train <- sample(x = 1:nrow(x), size = dim(x)[1]*0.8) 
   x.train <- x[train,]
   y.train <- y[train]
