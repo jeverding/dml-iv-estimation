@@ -8,7 +8,6 @@
 # variables regressions eventually. Supports weighted regressions and wild cluster bootstrapped inference. 
 #
 # To Do: 
-# - Check data type of outcome and adjust fam.glmnet; binary: binomial; else: gaussian 
 # - Implement more comprehensive grid search for random forest hyperparameter tuning 
 #
 # ========================================================================================================== #
@@ -18,14 +17,13 @@ rm( list=ls() )
 
 library(plyr)
 library(dplyr)
+library(Matrix)
 library(hdm)
 library(glmnet)
 library(nnet)
-library(randomForest)
 library(ranger)
 library(rpart)
 library(rpart.plot)
-library(gbm)
 library(xgboost)
 library(foreign)
 library(haven)
@@ -71,9 +69,9 @@ partial.out <- function(y,x){
   
   # Split data in 80% training and 20% test data 
   train <- sample(x = 1:nrow(x), size = nrow(x)*0.8) 
-  x.train <- x[train,]
-  y.train <- y[train]
-  x.test <- x[-train,] 
+  x.train <- Matrix(x[train,], sparse = TRUE) 
+  x.test <- Matrix(x[-train,], sparse = TRUE) 
+  y.train <- y[train] 
   y.test <- y[-train] 
   
   
@@ -164,7 +162,7 @@ partial.out <- function(y,x){
                        label = y.train, 
                        nrounds = params$nrounds, 
                        nfold = 5, 
-                       objective = "reg:linear",  # for regression models 
+                       objective = "reg:squarederror",  # for regression models 
                        early_stopping_rounds = 100, # stop if no improvement for 100 consecutive trees 
                        print_every_n = 500, 
                        eval_metric = "rmse")
@@ -188,7 +186,7 @@ partial.out <- function(y,x){
                            data = xgb.DMatrix(x.train, 
                                               label = y.train), 
                            nrounds = params$nrounds, 
-                           objective = "reg:linear",  # for regression models 
+                           objective = "reg:squarederror",  # for regression models 
                            eval_metric = "rmse") 
   # Predict test data using trained final model 
   pred <- predict(xgb.trained, newdata = x.test) 
@@ -236,7 +234,7 @@ partial.out <- function(y,x){
                           data = xgb.DMatrix(x, 
                                              label = y), 
                           nrounds = params$nrounds, 
-                          objective = "reg:linear",  # for regression models 
+                          objective = "reg:squarederror",  # for regression models 
                           eval_metric = "rmse") 
     y.hat <- predict(best.mod, newdata = x) 
   }
@@ -282,8 +280,8 @@ x.formula <- as.formula(paste0("~(-1 + factor(country) + factor(chbyear) + facto
                                paste(ctrend_2, collapse = " + "), " + ", 
                                paste(ctrend_3, collapse = " + "), 
                                ")"))
-x <- model.matrix(x.formula, 
-                  data=data.share) 
+x <- sparse.model.matrix(x.formula, 
+                         data=data.share) 
 
 # Check running time 
 start_time <- Sys.time()
@@ -296,6 +294,14 @@ d_end_time - start_time
 ztil <- partial.out(z, x) 
 z_end_time <- Sys.time() 
 z_end_time - start_time 
+
+# Save results 
+write.csv2(as.data.frame(ytil$til),
+           file=file.path(output_dir,'ytil_til.csv'),
+           row.names=FALSE)
+write.csv2(as.data.frame(ytil$table.mse),
+           file=file.path(output_dir,'ytil_tablemse.csv'),
+           row.names=FALSE)
 
 # Start: Inference -------------------------------------------------------------------------------------------
 # IV regression using residuals along with wild cluster bootstrap inference 
