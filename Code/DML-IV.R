@@ -136,12 +136,11 @@ partial.out <- function(y,x){
   #### Gradient Boosting (XGB) ####
   # Hyperparameter tuning 
   xgb.grid <- expand.grid(nrounds = 20000, 
-                          eta = c(0.01, 0.1, 0.2, 0.3), #eta = c(0.01, 0.05, 0.1, 0.2, 0.3), 
-                          max_depth = c(1, 3, 5), #max_depth = c(1, 2, 3, 5), 
+                          eta = c(0.01, 0.05, 0.1, 0.15, 0.2, 0.3), 
+                          max_depth = c(1, 2, 3, 5, 7), 
                           gamma = 0, 
-                          #min_child_weight = c(1, 3, 5, 7), 
-                          subsample = c(0.5, 0.75, 1),
-                          colsample_bytree = c(0.8, 1), 
+                          subsample = c(0.75, 1),
+                          colsample_bytree = c(0.7, 0.8, 0.9, 1), 
                           opt.trees = NA,               # save results here 
                           min.RMSE = NA                 # save results here 
                           )
@@ -152,7 +151,6 @@ partial.out <- function(y,x){
                    eta = xgb.grid$eta[i], 
                    max_depth = xgb.grid$max_depth[i], 
                    gamma = xgb.grid$gamma[i], 
-                   #min_child_weight = xgb.grid$min_child_weight[i], 
                    subsample = xgb.grid$subsample[i], 
                    colsample_bytree = xgb.grid$colsample_bytree[i]) 
     
@@ -178,7 +176,6 @@ partial.out <- function(y,x){
                  eta = xgb.grid$eta[which.min(xgb.grid$min.RMSE)], 
                  max_depth = xgb.grid$max_depth[which.min(xgb.grid$min.RMSE)], 
                  gamma = xgb.grid$gamma[which.min(xgb.grid$min.RMSE)], 
-                 #min_child_weight = xgb.grid$min_child_weight[which.min(xgb.grid$min.RMSE)], 
                  subsample = xgb.grid$subsample[which.min(xgb.grid$min.RMSE)], 
                  colsample_bytree = xgb.grid$colsample_bytree[which.min(xgb.grid$min.RMSE)]) 
   # Train final model w/ cross-validated hyperparameters 
