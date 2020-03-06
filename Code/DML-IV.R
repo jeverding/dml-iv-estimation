@@ -9,6 +9,8 @@
 #
 # To Do: 
 # - Implement more comprehensive grid search for random forest hyperparameter tuning 
+# - Export DML IV WCB results 
+# - Run heterogeneity analyses 
 #
 # ========================================================================================================== #
 # ========================================================================================================== #
@@ -261,6 +263,7 @@ data.share <-
   filter(normchbyear %in% c(-10:-1,1:10)) %>% 
   mutate(eurodcat = as.numeric(eurodcat))
 
+# Main sample ================================================================================================
 # Implement machine learning methods to get residuals --------------------------------------------------------
 # Define outcome y, treatment d, and instrumental variable z  
 y <- as.matrix(data.share[,"eurodcat"]) 
@@ -280,24 +283,35 @@ x.formula <- as.formula(paste0("~(-1 + factor(country) + factor(chbyear) + facto
 x <- sparse.model.matrix(x.formula, 
                          data=data.share) 
 
-# Check running time 
+# Start: partialling out -------------------------------------------------------------------------------------
+# (also check running time and save results) 
 start_time <- Sys.time()
 ytil <- partial.out(y, x)
 y_end_time <- Sys.time() 
 y_end_time - start_time 
+write.csv2(as.data.frame(ytil$til),
+           file=file.path(output_dir,'y_til.csv'),
+           row.names=FALSE)
+write.csv2(as.data.frame(ytil$table.mse),
+           file=file.path(output_dir,'y_tablemse.csv'),
+           row.names=FALSE)
 dtil <- partial.out(d, x)
 d_end_time <- Sys.time() 
 d_end_time - start_time 
+write.csv2(as.data.frame(dtil$til),
+           file=file.path(output_dir,'d_til.csv'),
+           row.names=FALSE)
+write.csv2(as.data.frame(dtil$table.mse),
+           file=file.path(output_dir,'d_tablemse.csv'),
+           row.names=FALSE)
 ztil <- partial.out(z, x) 
 z_end_time <- Sys.time() 
 z_end_time - start_time 
-
-# Save results 
-write.csv2(as.data.frame(ytil$til),
-           file=file.path(output_dir,'ytil_til.csv'),
+write.csv2(as.data.frame(ztil$til),
+           file=file.path(output_dir,'z_til.csv'),
            row.names=FALSE)
-write.csv2(as.data.frame(ytil$table.mse),
-           file=file.path(output_dir,'ytil_tablemse.csv'),
+write.csv2(as.data.frame(ztil$table.mse),
+           file=file.path(output_dir,'z_tablemse.csv'),
            row.names=FALSE)
 
 # Start: Inference -------------------------------------------------------------------------------------------
@@ -321,26 +335,5 @@ ivfit.clust <- cluster.wild.ivreg(ivfit,
                                   seed = seed.set)
 ivfit.clust 
 
-
-
-# ++++
-# test: ivreg for cluster robust inference (to do: wrap in function)
-data.share$y <- data.share[,"eurodcat"] 
-data.share$d <- data.share[,"chyrseduc"] 
-data.share$z <- data.share[,"t_compschool"] 
-data.share$cluster <- as.numeric(factor(data.share$country)) 
-test.ivfit <- ivreg(formula = y ~ d | z, 
-                    data = data.share)
-summ.test.ivfit <- summary(test.ivfit)
-summ.test.ivfit #$coefficients[2,3]
-test.ivfit.clust <- cluster.wild.ivreg(test.ivfit, 
-                                       dat = data.share, 
-                                       cluster = ~ cluster, 
-                                       ci.level = 0.95, 
-                                       boot.reps = 1000, 
-                                       seed = seed.set)
-test.ivfit.clust
-## define level of clustering standard errors 
-## (not needed when using clusterSEs methods like wild cluster bootstrap)
-#cluster.level <- as.numeric(factor(data.share$country)) 
-# ++++
+# Heterogeneity by gender ====================================================================================
+# To Do: Estimate DML IV effects for fathers/mothers, parents of sons/daughters 
