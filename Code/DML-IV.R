@@ -138,11 +138,11 @@ partial.out <- function(y,x){
   #### Gradient Boosting (XGB) ####
   # Hyperparameter tuning 
   xgb.grid <- expand.grid(nrounds = 20000, 
-                          eta = c(0.01, 0.05, 0.1, 0.15, 0.2, 0.3), 
-                          max_depth = c(1, 2, 3, 5, 7), 
+                          eta = c(0.01, 0.1, 0.3), #c(0.01, 0.05, 0.1, 0.15, 0.2, 0.3), 
+                          max_depth = c(1, 3, 7), #c(1, 2, 3, 5, 7), 
                           gamma = 0, 
-                          subsample = c(0.75, 1),
-                          colsample_bytree = c(0.7, 0.8, 0.9, 1), 
+                          subsample = 0.75, #c(0.75, 1),
+                          colsample_bytree = c(0.8, 1), #c(0.7, 0.8, 0.9, 1), 
                           opt.trees = NA,               # save results here 
                           min.RMSE = NA                 # save results here 
                           )
@@ -290,28 +290,28 @@ ytil <- partial.out(y, x)
 y_end_time <- Sys.time() 
 y_end_time - start_time 
 write.csv2(as.data.frame(ytil$til),
-           file=file.path(output_dir,'y_til.csv'),
+           file=file.path(output_dir,'test_y_til.csv'),
            row.names=FALSE)
 write.csv2(as.data.frame(ytil$table.mse),
-           file=file.path(output_dir,'y_tablemse.csv'),
+           file=file.path(output_dir,'test_y_tablemse.csv'),
            row.names=FALSE)
 dtil <- partial.out(d, x)
 d_end_time <- Sys.time() 
 d_end_time - start_time 
 write.csv2(as.data.frame(dtil$til),
-           file=file.path(output_dir,'d_til.csv'),
+           file=file.path(output_dir,'test_d_til.csv'),
            row.names=FALSE)
 write.csv2(as.data.frame(dtil$table.mse),
-           file=file.path(output_dir,'d_tablemse.csv'),
+           file=file.path(output_dir,'test_d_tablemse.csv'),
            row.names=FALSE)
 ztil <- partial.out(z, x) 
 z_end_time <- Sys.time() 
 z_end_time - start_time 
 write.csv2(as.data.frame(ztil$til),
-           file=file.path(output_dir,'z_til.csv'),
+           file=file.path(output_dir,'test_z_til.csv'),
            row.names=FALSE)
 write.csv2(as.data.frame(ztil$table.mse),
-           file=file.path(output_dir,'z_tablemse.csv'),
+           file=file.path(output_dir,'test_z_tablemse.csv'),
            row.names=FALSE)
 
 # Start: Inference -------------------------------------------------------------------------------------------
