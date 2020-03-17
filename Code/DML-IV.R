@@ -114,12 +114,13 @@ partial.out <- function(y,x){
   #### Random Forest ####
   ntree.set <- 5000 
   # Test different mtrys (hyperparameter), eventually select best RF model 
-  mtry.seq <- seq(from = 2, to = floor(sqrt(ncol(x.train)))*2, by = 2)
-  if (!floor(sqrt(ncol(x.train))) %in% mtry.seq) {
-    mtry.seq <- sort(c(mtry.seq, 
-                       floor(sqrt(ncol(x.train)))
-                       )) 
-  } 
+  #mtry.seq <- seq(from = 2, to = floor(sqrt(ncol(x.train)))*2, by = 2)
+  #if (!floor(sqrt(ncol(x.train))) %in% mtry.seq) {
+  #  mtry.seq <- sort(c(mtry.seq, 
+  #                     floor(sqrt(ncol(x.train)))
+  #                     )) 
+  #} 
+  mtry.seq <- c(2, floor(sqrt(ncol(x.train))), floor(sqrt(ncol(x.train)))*2) 
   for (i in 1:length(mtry.seq)) {
     rf <- ranger(x = x.train, y = y.train, 
                  num.trees = ntree.set, 
