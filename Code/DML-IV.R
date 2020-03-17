@@ -317,9 +317,9 @@ write.csv2(as.data.frame(ztil$table.mse),
 # Start: Inference -------------------------------------------------------------------------------------------
 # IV regression using residuals along with wild cluster bootstrap inference 
 # code up dataframe data.til, containing all residuals from partialling out 
-data.til <- data.frame(y = ytil$til, 
-                       d = dtil$til, 
-                       z = ztil$til, 
+data.til <- data.frame(y = as.numeric(ytil$til), 
+                       d = as.numeric(dtil$til), 
+                       z = as.numeric(ztil$til), 
                        cluster = as.numeric(factor(data.share$country)), 
                        wght = data.share$w_ch)
 ivfit <- ivreg(formula = y ~ d | z, 
