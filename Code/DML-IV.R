@@ -140,7 +140,7 @@ partial.out <- function(y,x){
   # Hyperparameter tuning 
   xgb.grid <- expand.grid(nrounds = 20000, 
                           eta = c(0.01, 0.1, 0.3), #c(0.01, 0.05, 0.1, 0.15, 0.2, 0.3), 
-                          max_depth = c(1, 3, 7), #c(1, 2, 3, 5, 7), 
+                          max_depth = c(1, 3), #c(1, 2, 3, 5, 7), 
                           gamma = 0, 
                           subsample = 0.75, #c(0.75, 1),
                           colsample_bytree = c(0.8, 1), #c(0.7, 0.8, 0.9, 1), 
