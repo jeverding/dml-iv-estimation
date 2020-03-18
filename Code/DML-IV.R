@@ -112,7 +112,7 @@ partial.out <- function(y,x){
   }
   
   #### Random Forest ####
-  ntree.set <- 5000 
+  ntree.set <- 2000 #5000 
   # Test different mtrys (hyperparameter), eventually select best RF model 
   #mtry.seq <- seq(from = 2, to = floor(sqrt(ncol(x.train)))*2, by = 2)
   #if (!floor(sqrt(ncol(x.train))) %in% mtry.seq) {
@@ -120,7 +120,7 @@ partial.out <- function(y,x){
   #                     floor(sqrt(ncol(x.train)))
   #                     )) 
   #} 
-  mtry.seq <- c(2, floor(sqrt(ncol(x.train))), floor(sqrt(ncol(x.train)))*2) 
+  mtry.seq <- c(2, floor(sqrt(ncol(x.train))), floor(sqrt(ncol(x.train))*1.5)) #c(2, floor(sqrt(ncol(x.train))), floor(sqrt(ncol(x.train)))*2) 
   for (i in 1:length(mtry.seq)) {
     rf <- ranger(x = x.train, y = y.train, 
                  num.trees = ntree.set, 
@@ -140,7 +140,7 @@ partial.out <- function(y,x){
   # Hyperparameter tuning 
   xgb.grid <- expand.grid(nrounds = 20000, 
                           eta = c(0.01, 0.1, 0.3), #c(0.01, 0.05, 0.1, 0.15, 0.2, 0.3), 
-                          max_depth = c(1, 3), #c(1, 2, 3, 5, 7), 
+                          max_depth = c(1, 2, 3), #c(1, 2, 3, 5, 7), 
                           gamma = 0, 
                           subsample = 0.75, #c(0.75, 1),
                           colsample_bytree = c(0.8, 1), #c(0.7, 0.8, 0.9, 1), 
@@ -254,7 +254,7 @@ ctrend_2 <- paste0("trend2cntry_", 1:length(unique(data.share$country)))
 ctrend_3 <- paste0("trend3cntry_", 1:length(unique(data.share$country))) 
 var.select <- c("eurodcat", "chyrseduc", "t_compschool", 
                 "country", "chbyear", "sex", "chsex", "int_year", "agemonth", "yrseduc", 
-                ctrend_1, ctrend_2, ctrend_3, 
+                ctrend_1, ctrend_2, #ctrend_3, 
                 "normchbyear", "w_ch") 
 
 data.share <- 
@@ -278,8 +278,8 @@ z <- as.matrix(data.share[,"t_compschool"])
 # Basic model for actual preliminary analyses 
 x.formula <- as.formula(paste0("~(-1 + factor(country) + factor(chbyear) + factor(sex) + factor(chsex) + factor(int_year) + poly(agemonth,2) + poly(yrseduc,2) + ", 
                                paste(ctrend_1, collapse = " + "), " + ", 
-                               paste(ctrend_2, collapse = " + "), " + ", 
-                               paste(ctrend_3, collapse = " + "), 
+                               paste(ctrend_2, collapse = " + "), #" + ", 
+                               #paste(ctrend_3, collapse = " + "), 
                                ")"))
 x <- sparse.model.matrix(x.formula, 
                          data=data.share) 
