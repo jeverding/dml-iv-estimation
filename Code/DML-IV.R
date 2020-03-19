@@ -58,7 +58,7 @@ clust.se <- function(est.model, cluster){
 }
 
 # Partialling out (first part of DML algorithm) 
-partial.out <- function(y, x, nfold = 2){
+partial.out <- function(y, x, nfold = 5){
   # Setting up the table 
   columns <- c("MSE", 
                "lambda", "alpha", # For elastic net 
@@ -113,8 +113,8 @@ partial.out <- function(y, x, nfold = 2){
   
   #### Random Forest ####
   # Hyperparameter tuning 
-  rf.grid <- expand.grid(ntree = c(1000, 5000), #2000
-                         mtry = c(floor(sqrt(ncol(x.train))*1.5), floor(sqrt(ncol(x.train))), 2) #floor(sqrt(ncol(x.train))*0.5)
+  rf.grid <- expand.grid(ntree = c(500, 1000, 2000, 5000), 
+                         mtry = c(floor(sqrt(ncol(x.train))*1.5), floor(sqrt(ncol(x.train))), floor(sqrt(ncol(x.train))*0.5), 2) 
                          ) # max.depth = c(1, 2, 3, 5, 0) 
   # Start: RF grid search 
   for(i in 1:nrow(rf.grid)) {
@@ -205,7 +205,7 @@ partial.out <- function(y, x, nfold = 2){
   
   # Benchmarking: Select best method based on OOB MSE 
   # (Identify best method directly using method-specific tuning parameters): 
-  # Prepare data for cross-fitting 
+  # Prepare data for (nfold) cross-fitting 
   set.seed(seed.set)
   foldid <- rep.int(1:nfold, times = ceiling(nrow(x)/nfold))[sample.int(nrow(x))]
   I <- split(1:nrow(x), foldid)
