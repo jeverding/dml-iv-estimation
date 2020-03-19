@@ -8,7 +8,6 @@
 # variables regressions eventually. Supports weighted regressions and wild cluster bootstrapped inference. 
 #
 # To Do: 
-# - Implement more comprehensive grid search for random forest hyperparameter tuning 
 # - Export DML IV WCB results 
 # - Run heterogeneity analyses 
 #
@@ -59,7 +58,7 @@ clust.se <- function(est.model, cluster){
 }
 
 # Partialling out (first part of DML algorithm) 
-partial.out <- function(y,x){
+partial.out <- function(y, x, nfold = 2){
   # Setting up the table 
   columns <- c("MSE", 
                "lambda", "alpha", # For elastic net 
@@ -69,7 +68,8 @@ partial.out <- function(y,x){
   table.mse <- data.frame(matrix(nrow=0, ncol= length(columns)))
   colnames(table.mse) <- columns
   
-  # Split data in 80% training and 20% test data 
+  # Split data in 80% training and 20% test data
+  set.seed(seed.set)
   train <- sample(x = 1:nrow(x), size = nrow(x)*0.8) 
   x.train <- Matrix(x[train,], sparse = TRUE) 
   x.test <- Matrix(x[-train,], sparse = TRUE) 
@@ -80,7 +80,6 @@ partial.out <- function(y,x){
   #### OLS #####
   #Lin.mod <- lm(y.train~., data = data.frame(y.train, x.train[,-1]))
   # Calculating the MSE of the prediction error (removing the Intercept of x.test)
-  # Issuse -> Dummies high probability of Perfect multicollinearity. No reliable Prediction.
   #table.mse[1,1] <- mean((predict.lm(Lin.mod, as.data.frame(x.test[,-1])) - y.test)^2)
   #table.mse[1,2] <- "-"
   
@@ -89,6 +88,7 @@ partial.out <- function(y,x){
   r <- 0.2
   for (i in seq(0, 1, r)) {
     # 10-fold CV to estimate tuning paramter with the lowest prediction error 
+    set.seed(seed.set)
     cv.out <- cv.glmnet(x.train, y.train, family = "gaussian", nfolds = 10, alpha = i)
     # Select lambda (here: 1se instead of min.) 
     bestlam <- cv.out$lambda.1se
@@ -112,37 +112,35 @@ partial.out <- function(y,x){
   }
   
   #### Random Forest ####
-  ntree.set <- 5000 
-  # Test different mtrys (hyperparameter), eventually select best RF model 
-  mtry.seq <- seq(from = 2, to = floor(sqrt(ncol(x.train)))*2, by = 2)
-  if (!floor(sqrt(ncol(x.train))) %in% mtry.seq) {
-    mtry.seq <- sort(c(mtry.seq, 
-                       floor(sqrt(ncol(x.train)))
-                       )) 
-  } 
-  for (i in 1:length(mtry.seq)) {
+  # Hyperparameter tuning 
+  rf.grid <- expand.grid(ntree = c(1000, 5000), #2000
+                         mtry = c(floor(sqrt(ncol(x.train))*1.5), floor(sqrt(ncol(x.train))), 2) #floor(sqrt(ncol(x.train))*0.5)
+                         ) # max.depth = c(1, 2, 3, 5, 0) 
+  # Start: RF grid search 
+  for(i in 1:nrow(rf.grid)) {
+    set.seed(seed.set)
     rf <- ranger(x = x.train, y = y.train, 
-                 num.trees = ntree.set, 
-                 mtry = mtry.seq[i]) 
+                 num.trees = rf.grid$ntree[i], 
+                 mtry = rf.grid$mtry[i]) 
     pred <- predict(rf, data = x.test, type="response")$predictions 
     
     # new NA row for random forest, fill again sequentially 
     table.mse[dim(table.mse)[1]+1,] <- rep(NA,length(columns)) 
-    rownames(table.mse)[dim(table.mse)[1]]  <- paste0("Random Forest (no. ", i, "/", length(mtry.seq), ")") 
+    rownames(table.mse)[dim(table.mse)[1]]  <- paste0("Random Forest (no. ", i, "/", nrow(rf.grid), ")") 
     table.mse$MSE[dim(table.mse)[1]] <- mean((pred - y.test)^2) 
-    table.mse$mtry[dim(table.mse)[1]] <- mtry.seq[i] 
-    table.mse$ntree[dim(table.mse)[1]]<- ntree.set 
-    print(paste0("RF (ranger) no. ", i, "/", length(mtry.seq), " fitted."))
-  }
+    table.mse$mtry[dim(table.mse)[1]] <- rf.grid$mtry[i] 
+    table.mse$ntree[dim(table.mse)[1]]<- rf.grid$ntree[i] 
+    print(paste0("RF (ranger) no. ", i, "/", nrow(rf.grid), " fitted."))
+  } # End: RF grid search 
   
   #### Gradient Boosting (XGB) ####
   # Hyperparameter tuning 
   xgb.grid <- expand.grid(nrounds = 20000, 
-                          eta = c(0.01, 0.05, 0.1, 0.15, 0.2, 0.3), 
-                          max_depth = c(1, 2, 3, 5, 7), 
+                          eta = c(0.01, 0.1, 0.3), #c(0.01, 0.05, 0.1, 0.15, 0.2, 0.3), 
+                          max_depth = c(1, 2, 3, 5), #c(1, 2, 3, 5, 7), 
                           gamma = 0, 
-                          subsample = c(0.75, 1),
-                          colsample_bytree = c(0.7, 0.8, 0.9, 1), 
+                          subsample = 0.75, #c(0.75, 1),
+                          colsample_bytree = 0.8, #c(0.7, 0.8, 0.9, 1), 
                           opt.trees = NA,               # save results here 
                           min.RMSE = NA                 # save results here 
                           )
@@ -157,6 +155,7 @@ partial.out <- function(y,x){
                    colsample_bytree = xgb.grid$colsample_bytree[i]) 
     
     # Tune model using 5-fold cv 
+    set.seed(seed.set)
     xgb.tune <- xgb.cv(params = params, 
                        data = x.train, 
                        label = y.train, 
@@ -181,6 +180,7 @@ partial.out <- function(y,x){
                  subsample = xgb.grid$subsample[which.min(xgb.grid$min.RMSE)], 
                  colsample_bytree = xgb.grid$colsample_bytree[which.min(xgb.grid$min.RMSE)]) 
   # Train final model w/ cross-validated hyperparameters 
+  set.seed(seed.set)
   xgb.trained <- xgb.train(params = params, 
                            data = xgb.DMatrix(x.train, 
                                               label = y.train), 
@@ -205,41 +205,51 @@ partial.out <- function(y,x){
   
   # Benchmarking: Select best method based on OOB MSE 
   # (Identify best method directly using method-specific tuning parameters): 
-  # Elnet 
-  if (!is.na(table.mse$lambda[which.min(table.mse$MSE)])) { 
-    opt.alpha <- table.mse$alpha[which.min(table.mse$MSE)]
-    opt.lambda <- table.mse$lambda[which.min(table.mse$MSE)]
-    best.mod <- glmnet(x, y, 
-                       alpha = opt.alpha, 
-                       lambda = opt.lambda)
-    y.hat <- predict(best.mod, type = 'response', 
-                     s = opt.lambda, 
-                     newx = x)
-  }
-  # RF 
-  if (!is.na(table.mse$mtry[which.min(table.mse$MSE)])) { 
-    opt.mtry <- table.mse$mtry[which.min(table.mse$MSE)] 
-    opt.ntree <- table.mse$ntree[which.min(table.mse$MSE)] 
-    best.mod <- ranger(x = x, y = y, 
-                       num.trees = opt.ntree, 
-                       mtry = opt.mtry) 
-    y.hat <- predict(best.mod, data = x, type="response")$predictions 
-  }
-  # XGBoost 
-  # (No need to specify hyperparameters again, as only the best xgb model is written to table. 
-  # Hence, its hyperparameters can still be directly called from params-list.) 
-  if (!is.na(table.mse$learn_rate[which.min(table.mse$MSE)])) { 
-    best.mod <- xgb.train(params = params, 
-                          data = xgb.DMatrix(x, 
-                                             label = y), 
-                          nrounds = params$nrounds, 
-                          objective = "reg:squarederror",  # for regression models 
-                          eval_metric = "rmse") 
-    y.hat <- predict(best.mod, newdata = x) 
-  }
-  
-  ytil <- (y - y.hat) 
-  return(list("til" = ytil, 
+  # Prepare data for cross-fitting 
+  set.seed(seed.set)
+  foldid <- rep.int(1:nfold, times = ceiling(nrow(x)/nfold))[sample.int(nrow(x))]
+  I <- split(1:nrow(x), foldid)
+  # Code up object to store residuals 
+  til <- rep(NA, nrow(x))
+  # Compute cross-fitted residuals 
+  for(b in 1:length(I)){
+    print(paste0("Compute residuals: Fold ", b, "/", length(I)))
+    set.seed(seed.set)
+    # Elnet 
+    if (!is.na(table.mse$lambda[which.min(table.mse$MSE)])) { 
+      opt.alpha <- table.mse$alpha[which.min(table.mse$MSE)]
+      opt.lambda <- table.mse$lambda[which.min(table.mse$MSE)]
+      best.mod <- glmnet(x[-I[[b]],], y[-I[[b]]], 
+                         alpha = opt.alpha, 
+                         lambda = opt.lambda)
+      hat <- predict(best.mod, type = 'response', 
+                       s = opt.lambda, 
+                       newx = x[I[[b]],])
+      }
+    # RF 
+    if (!is.na(table.mse$mtry[which.min(table.mse$MSE)])) { 
+      opt.mtry <- table.mse$mtry[which.min(table.mse$MSE)] 
+      opt.ntree <- table.mse$ntree[which.min(table.mse$MSE)] 
+      best.mod <- ranger(x = x[-I[[b]],], y = y[-I[[b]]], 
+                         num.trees = opt.ntree, 
+                         mtry = opt.mtry) 
+      hat <- predict(best.mod, data = x[I[[b]],], type="response")$predictions 
+      }
+    # XGBoost 
+    # (No need to specify hyperparameters again, as only the best xgb model is written to table. 
+    # Hence, its hyperparameters can still be directly called from params-list.) 
+    if (!is.na(table.mse$learn_rate[which.min(table.mse$MSE)])) { 
+      best.mod <- xgb.train(params = params, 
+                            data = xgb.DMatrix(x[-I[[b]],], 
+                                               label = y[-I[[b]]]), 
+                            nrounds = params$nrounds, 
+                            objective = "reg:squarederror",  # for regression models 
+                            eval_metric = "rmse") 
+      hat <- predict(best.mod, newdata = x[I[[b]],]) 
+      }
+    til[I[[b]]] <- (y[I[[b]]] - hat) 
+    }
+  return(list("til" = til, 
               "table.mse" = table.mse))
 }
 
@@ -253,7 +263,7 @@ ctrend_2 <- paste0("trend2cntry_", 1:length(unique(data.share$country)))
 ctrend_3 <- paste0("trend3cntry_", 1:length(unique(data.share$country))) 
 var.select <- c("eurodcat", "chyrseduc", "t_compschool", 
                 "country", "chbyear", "sex", "chsex", "int_year", "agemonth", "yrseduc", 
-                ctrend_1, ctrend_2, ctrend_3, 
+                ctrend_1, ctrend_2, #ctrend_3, 
                 "normchbyear", "w_ch") 
 
 data.share <- 
@@ -277,8 +287,8 @@ z <- as.matrix(data.share[,"t_compschool"])
 # Basic model for actual preliminary analyses 
 x.formula <- as.formula(paste0("~(-1 + factor(country) + factor(chbyear) + factor(sex) + factor(chsex) + factor(int_year) + poly(agemonth,2) + poly(yrseduc,2) + ", 
                                paste(ctrend_1, collapse = " + "), " + ", 
-                               paste(ctrend_2, collapse = " + "), " + ", 
-                               paste(ctrend_3, collapse = " + "), 
+                               paste(ctrend_2, collapse = " + "), #" + ", 
+                               #paste(ctrend_3, collapse = " + "), 
                                ")"))
 x <- sparse.model.matrix(x.formula, 
                          data=data.share) 
@@ -327,6 +337,7 @@ ivfit <- ivreg(formula = y ~ d | z,
                data = data.til)
 summ.ivfit <- summary(ivfit)
 summ.ivfit #$coefficients[2,3]
+set.seed(seed.set)
 ivfit.clust <- cluster.wild.ivreg(ivfit, 
                                   dat = data.til, 
                                   cluster = ~ cluster, 
