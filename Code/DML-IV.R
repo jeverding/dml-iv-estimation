@@ -59,7 +59,7 @@ clust.se <- function(est.model, cluster){
 }
 
 # Partialling out (first part of DML algorithm) 
-partial.out <- function(y,x){
+partial.out <- function(y, x, nfold = 2){
   # Setting up the table 
   columns <- c("MSE", 
                "lambda", "alpha", # For elastic net 
@@ -69,7 +69,8 @@ partial.out <- function(y,x){
   table.mse <- data.frame(matrix(nrow=0, ncol= length(columns)))
   colnames(table.mse) <- columns
   
-  # Split data in 80% training and 20% test data 
+  # Split data in 80% training and 20% test data
+  set.seed(seed.set)
   train <- sample(x = 1:nrow(x), size = nrow(x)*0.8) 
   x.train <- Matrix(x[train,], sparse = TRUE) 
   x.test <- Matrix(x[-train,], sparse = TRUE) 
@@ -89,6 +90,7 @@ partial.out <- function(y,x){
   r <- 0.2
   for (i in seq(0, 1, r)) {
     # 10-fold CV to estimate tuning paramter with the lowest prediction error 
+    set.seed(seed.set)
     cv.out <- cv.glmnet(x.train, y.train, family = "gaussian", nfolds = 10, alpha = i)
     # Select lambda (here: 1se instead of min.) 
     bestlam <- cv.out$lambda.1se
@@ -121,6 +123,7 @@ partial.out <- function(y,x){
                        )) 
   } 
   for (i in 1:length(mtry.seq)) {
+    set.seed(seed.set)
     rf <- ranger(x = x.train, y = y.train, 
                  num.trees = ntree.set, 
                  mtry = mtry.seq[i]) 
@@ -157,6 +160,7 @@ partial.out <- function(y,x){
                    colsample_bytree = xgb.grid$colsample_bytree[i]) 
     
     # Tune model using 5-fold cv 
+    set.seed(seed.set)
     xgb.tune <- xgb.cv(params = params, 
                        data = x.train, 
                        label = y.train, 
@@ -181,6 +185,7 @@ partial.out <- function(y,x){
                  subsample = xgb.grid$subsample[which.min(xgb.grid$min.RMSE)], 
                  colsample_bytree = xgb.grid$colsample_bytree[which.min(xgb.grid$min.RMSE)]) 
   # Train final model w/ cross-validated hyperparameters 
+  set.seed(seed.set)
   xgb.trained <- xgb.train(params = params, 
                            data = xgb.DMatrix(x.train, 
                                               label = y.train), 
@@ -205,41 +210,51 @@ partial.out <- function(y,x){
   
   # Benchmarking: Select best method based on OOB MSE 
   # (Identify best method directly using method-specific tuning parameters): 
-  # Elnet 
-  if (!is.na(table.mse$lambda[which.min(table.mse$MSE)])) { 
-    opt.alpha <- table.mse$alpha[which.min(table.mse$MSE)]
-    opt.lambda <- table.mse$lambda[which.min(table.mse$MSE)]
-    best.mod <- glmnet(x, y, 
-                       alpha = opt.alpha, 
-                       lambda = opt.lambda)
-    y.hat <- predict(best.mod, type = 'response', 
-                     s = opt.lambda, 
-                     newx = x)
-  }
-  # RF 
-  if (!is.na(table.mse$mtry[which.min(table.mse$MSE)])) { 
-    opt.mtry <- table.mse$mtry[which.min(table.mse$MSE)] 
-    opt.ntree <- table.mse$ntree[which.min(table.mse$MSE)] 
-    best.mod <- ranger(x = x, y = y, 
-                       num.trees = opt.ntree, 
-                       mtry = opt.mtry) 
-    y.hat <- predict(best.mod, data = x, type="response")$predictions 
-  }
-  # XGBoost 
-  # (No need to specify hyperparameters again, as only the best xgb model is written to table. 
-  # Hence, its hyperparameters can still be directly called from params-list.) 
-  if (!is.na(table.mse$learn_rate[which.min(table.mse$MSE)])) { 
-    best.mod <- xgb.train(params = params, 
-                          data = xgb.DMatrix(x, 
-                                             label = y), 
-                          nrounds = params$nrounds, 
-                          objective = "reg:squarederror",  # for regression models 
-                          eval_metric = "rmse") 
-    y.hat <- predict(best.mod, newdata = x) 
-  }
-  
-  ytil <- (y - y.hat) 
-  return(list("til" = ytil, 
+  # Prepare data for cross-fitting 
+  set.seed(seed.set)
+  foldid <- rep.int(1:nfold, times = ceiling(nrow(x)/nfold))[sample.int(nrow(x))]
+  I <- split(1:nrow(x), foldid)
+  # Code up object to store residuals 
+  til <- rep(NA, nrow(x))
+  # Compute cross-fitted residuals 
+  for(b in 1:length(I)){
+    set.seed(seed.set)
+    # Elnet 
+    if (!is.na(table.mse$lambda[which.min(table.mse$MSE)])) { 
+      opt.alpha <- table.mse$alpha[which.min(table.mse$MSE)]
+      opt.lambda <- table.mse$lambda[which.min(table.mse$MSE)]
+      best.mod <- glmnet(x[-I[[b]],], y[-I[[b]]], 
+                         alpha = opt.alpha, 
+                         lambda = opt.lambda)
+      hat <- predict(best.mod, type = 'response', 
+                       s = opt.lambda, 
+                       newx = x[I[[b]],])
+      }
+    # RF 
+    if (!is.na(table.mse$mtry[which.min(table.mse$MSE)])) { 
+      opt.mtry <- table.mse$mtry[which.min(table.mse$MSE)] 
+      opt.ntree <- table.mse$ntree[which.min(table.mse$MSE)] 
+      best.mod <- ranger(x = x[-I[[b]],], y = y[-I[[b]]], 
+                         num.trees = opt.ntree, 
+                         mtry = opt.mtry) 
+      hat <- predict(best.mod, data = x[I[[b]],], type="response")$predictions 
+      }
+    # XGBoost 
+    # (No need to specify hyperparameters again, as only the best xgb model is written to table. 
+    # Hence, its hyperparameters can still be directly called from params-list.) 
+    if (!is.na(table.mse$learn_rate[which.min(table.mse$MSE)])) { 
+      best.mod <- xgb.train(params = params, 
+                            data = xgb.DMatrix(x[-I[[b]],], 
+                                               label = y[-I[[b]]]), 
+                            nrounds = params$nrounds, 
+                            objective = "reg:squarederror",  # for regression models 
+                            eval_metric = "rmse") 
+      hat <- predict(best.mod, newdata = x[I[[b]],]) 
+      }
+    til[I[[b]]] <- (y[I[[b]]] - hat) 
+    print(paste0("Compute residuals: Fold ", b, "/", length(I), " completed."))
+    }
+  return(list("til" = til, 
               "table.mse" = table.mse))
 }
 
@@ -327,6 +342,7 @@ ivfit <- ivreg(formula = y ~ d | z,
                data = data.til)
 summ.ivfit <- summary(ivfit)
 summ.ivfit #$coefficients[2,3]
+set.seed(seed.set)
 ivfit.clust <- cluster.wild.ivreg(ivfit, 
                                   dat = data.til, 
                                   cluster = ~ cluster, 
