@@ -8,7 +8,6 @@
 # variables regressions eventually. Supports weighted regressions and wild cluster bootstrapped inference. 
 #
 # To Do: 
-# - Implement more comprehensive grid search for random forest hyperparameter tuning 
 # - Export DML IV WCB results 
 # - Run heterogeneity analyses 
 #
@@ -81,7 +80,6 @@ partial.out <- function(y, x, nfold = 2){
   #### OLS #####
   #Lin.mod <- lm(y.train~., data = data.frame(y.train, x.train[,-1]))
   # Calculating the MSE of the prediction error (removing the Intercept of x.test)
-  # Issuse -> Dummies high probability of Perfect multicollinearity. No reliable Prediction.
   #table.mse[1,1] <- mean((predict.lm(Lin.mod, as.data.frame(x.test[,-1])) - y.test)^2)
   #table.mse[1,2] <- "-"
   
@@ -115,15 +113,9 @@ partial.out <- function(y, x, nfold = 2){
   
   #### Random Forest ####
   # Hyperparameter tuning 
-  #mtry.seq <- seq(from = 2, to = floor(sqrt(ncol(x.train)))*2, by = 2)
-  #if (!floor(sqrt(ncol(x.train))) %in% mtry.seq) {
-  #  mtry.seq <- sort(c(mtry.seq, 
-  #                     floor(sqrt(ncol(x.train)))
-  #                     )) 
-  #} 
   rf.grid <- expand.grid(ntree = c(1000, 5000), #2000
-                         mtry = c(floor(sqrt(ncol(x.train))*1.5), floor(sqrt(ncol(x.train))), 2) 
-                         )
+                         mtry = c(floor(sqrt(ncol(x.train))*1.5), floor(sqrt(ncol(x.train))), 2) #floor(sqrt(ncol(x.train))*0.5)
+                         ) # max.depth = c(1, 2, 3, 5, 0) 
   # Start: RF grid search 
   for(i in 1:nrow(rf.grid)) {
     set.seed(seed.set)
@@ -139,7 +131,7 @@ partial.out <- function(y, x, nfold = 2){
     table.mse$mtry[dim(table.mse)[1]] <- rf.grid$mtry[i] 
     table.mse$ntree[dim(table.mse)[1]]<- rf.grid$ntree[i] 
     print(paste0("RF (ranger) no. ", i, "/", nrow(rf.grid), " fitted."))
-  }
+  } # End: RF grid search 
   
   #### Gradient Boosting (XGB) ####
   # Hyperparameter tuning 
