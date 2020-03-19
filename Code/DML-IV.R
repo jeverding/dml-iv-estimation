@@ -281,7 +281,7 @@ x.formula <- as.formula(paste0("~(-1 + factor(country) + factor(chbyear) + facto
                                paste(ctrend_2, collapse = " + "), #" + ", 
                                #paste(ctrend_3, collapse = " + "), 
                                ")"))
-x <- model.matrix(x.formula, 
+x <- sparse.model.matrix(x.formula, 
                          data=data.share) 
 
 # Start: partialling out -------------------------------------------------------------------------------------
