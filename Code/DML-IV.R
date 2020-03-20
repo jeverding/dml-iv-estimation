@@ -338,3 +338,47 @@ ivfit.clust
 
 # Heterogeneity by gender ====================================================================================
 # To Do: Estimate DML IV effects for fathers/mothers, parents of sons/daughters 
+
+############################################################################################################
+# Test using only xgboost ====================================================================================
+seed.set <- 180911 
+set.seed(seed.set)
+# Set up loop
+Outcome <- list("y"=y,"d"=d, "z"=z)
+Residuals <- list("ytil"=NA, "dtil"=NA, "ztil"=NA)
+for (i in 1:3) {
+params <- list(nrounds = 20000, 
+               eta = 0.3, 
+               max_depth = 5, 
+               gamma = 0, 
+               subsample = 0.75, 
+               colsample_bytree = 0.8) 
+
+
+best.mod <- xgb.train(params = params, 
+                      data = xgb.DMatrix(x, 
+                                         label = Outcome[[i]]), 
+                      nrounds = params$nrounds, 
+                      objective = "reg:squarederror",  # for regression models 
+                      eval_metric = "rmse") 
+Residuals[[i]] <- predict(best.mod, newdata = x) 
+}
+
+# Start: Inference ---------------------------------------------------------------------------------------------
+data.til <- data.frame(y = as.numeric(Residuals$ytil), 
+                       d = as.numeric(Residuals$dtil), 
+                       z = as.numeric(Residuals$ztil), 
+                       cluster = as.numeric(factor(data.share$country)), 
+                       wght = data.share$w_ch)
+ivfit <- ivreg(formula = y ~ d | z, 
+               weights = wght, 
+               data = data.til)
+summ.ivfit <- summary(ivfit)
+summ.ivfit #$coefficients[2,3]
+ivfit.clust <- cluster.wild.ivreg(ivfit, 
+                                  dat = data.til, 
+                                  cluster = ~ cluster, 
+                                  ci.level = 0.95, 
+                                  boot.reps = 1000, 
+                                  seed = seed.set)
+ivfit.clust 
