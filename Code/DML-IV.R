@@ -393,15 +393,15 @@ set.seed(seed.set)
 foldid <- rep.int(1:nfold, times = ceiling(nrow(x)/nfold))[sample.int(nrow(x))]
 I <- split(1:nrow(x), foldid)
 Outcome <- list("y"=y,"d"=d, "z"=z)
-Residuals <- list("y"=rep(NA,nrow(x)), "d"=rep(NA,nrow(x)), "z"=rep(NA,nrow(x)))
+Residuals <- list("ytil"=rep(NA,nrow(x)), "dtil"=rep(NA,nrow(x)), "ztil"=rep(NA,nrow(x)))
 params <- list(nrounds = 20000, 
                eta = 0.3, 
                max_depth = 5, 
                gamma = 0, 
                subsample = 0.75, 
                colsample_bytree = 0.8) 
-
-for (i in c("y","d","z")) {
+#loop over Outcome variables
+for(i in 1:3) {
 for(b in 1:length(I)){
   print(paste0("Compute residuals: Fold ", b, "/", length(I)))
   set.seed(seed.set)
@@ -416,9 +416,9 @@ Residuals[[i]][I[[b]]] <- (y[I[[b]]] - predict(best.mod, newdata = x[I[[b]],]))
 }
 
 # Start: Inference ---------------------------------------------------------------------------------------------
-data.til <- data.frame(y = as.numeric(Residuals$y), 
-                       d = as.numeric(Residuals$d), 
-                       z = as.numeric(Residuals$z), 
+data.til <- data.frame(y = as.numeric(Residuals$ytil), 
+                       d = as.numeric(Residuals$dtil), 
+                       z = as.numeric(Residuals$ztil), 
                        cluster = as.numeric(factor(data.share$country)), 
                        wght = data.share$w_ch)
 ivfit <- ivreg(formula = y ~ d | z, 
