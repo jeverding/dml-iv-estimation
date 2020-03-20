@@ -347,21 +347,21 @@ set.seed(seed.set)
 Outcome <- list("y"=y,"d"=d, "z"=z)
 Residuals <- list("ytil"=NA, "dtil"=NA, "ztil"=NA)
 for (i in 1:3) {
-params <- list(nrounds = 20000, 
-               eta = 0.3, 
-               max_depth = 5, 
-               gamma = 0, 
-               subsample = 0.75, 
-               colsample_bytree = 0.8) 
-
-
-best.mod <- xgb.train(params = params, 
-                      data = xgb.DMatrix(x, 
-                                         label = Outcome[[i]]), 
-                      nrounds = params$nrounds, 
-                      objective = "reg:squarederror",  # for regression models 
-                      eval_metric = "rmse") 
-Residuals[[i]] <- predict(best.mod, newdata = x) 
+  params <- list(nrounds = 20000, 
+                 eta = 0.3, 
+                 max_depth = 5, 
+                 gamma = 0, 
+                 subsample = 0.75, 
+                 colsample_bytree = 0.8) 
+  
+  
+  best.mod <- xgb.train(params = params, 
+                        data = xgb.DMatrix(x, 
+                                           label = Outcome[[i]]), 
+                        nrounds = params$nrounds, 
+                        objective = "reg:squarederror",  # for regression models 
+                        eval_metric = "rmse") 
+  Residuals[[i]] <- (Outcome[[i]] - predict(best.mod, newdata = x))
 }
 
 # Start: Inference ---------------------------------------------------------------------------------------------
@@ -374,7 +374,7 @@ ivfit <- ivreg(formula = y ~ d | z,
                weights = wght, 
                data = data.til)
 summ.ivfit <- summary(ivfit)
-summ.ivfit #$coefficients[2,3]
+summ.ivfit #$coefficients[2,3] estimate = -3,24323
 ivfit.clust <- cluster.wild.ivreg(ivfit, 
                                   dat = data.til, 
                                   cluster = ~ cluster, 
@@ -382,3 +382,57 @@ ivfit.clust <- cluster.wild.ivreg(ivfit,
                                   boot.reps = 1000, 
                                   seed = seed.set)
 ivfit.clust 
+
+write.csv2(data.til,
+           file=file.path(output_dir,'Residuals.csv'),
+           row.names=FALSE)
+############################################################################################################
+# Test using only xgboost with crossfitting ================================================================
+set.seed(seed.set)
+# Set up loop
+foldid <- rep.int(1:nfold, times = ceiling(nrow(x)/nfold))[sample.int(nrow(x))]
+I <- split(1:nrow(x), foldid)
+Outcome <- list("y"=y,"d"=d, "z"=z)
+Residuals <- list("y"=rep(NA,nrow(x)), "d"=rep(NA,nrow(x)), "z"=rep(NA,nrow(x)))
+params <- list(nrounds = 20000, 
+               eta = 0.3, 
+               max_depth = 5, 
+               gamma = 0, 
+               subsample = 0.75, 
+               colsample_bytree = 0.8) 
+
+for (i in c("y","d","z")) {
+for(b in 1:length(I)){
+  print(paste0("Compute residuals: Fold ", b, "/", length(I)))
+  set.seed(seed.set)
+best.mod <- xgb.train(params = params, 
+                      data = xgb.DMatrix(x[-I[[b]],], 
+                                         label = Outcome[[i]][-I[[b]]]), 
+                      nrounds = params$nrounds, 
+                      objective = "reg:squarederror",  # for regression models 
+                      eval_metric = "rmse") 
+Residuals[[i]][I[[b]]] <- (y[I[[b]]] - predict(best.mod, newdata = x[I[[b]],]))
+}
+}
+
+# Start: Inference ---------------------------------------------------------------------------------------------
+data.til <- data.frame(y = as.numeric(Residuals$y), 
+                       d = as.numeric(Residuals$d), 
+                       z = as.numeric(Residuals$z), 
+                       cluster = as.numeric(factor(data.share$country)), 
+                       wght = data.share$w_ch)
+ivfit <- ivreg(formula = y ~ d | z, 
+               weights = wght, 
+               data = data.til)
+summ.ivfit <- summary(ivfit)
+summ.ivfit #$coefficients[2,3] estimate: 0.264216  SE:  0.007604
+ivfit.clust <- cluster.wild.ivreg(ivfit, 
+                                  dat = data.til, 
+                                  cluster = ~ cluster, 
+                                  ci.level = 0.95, 
+                                  boot.reps = 1000, 
+                                  seed = seed.set)
+ivfit.clust 
+write.csv2(data.til,
+           file=file.path(output_dir,'Residuals with Crossfitting.csv'),
+           row.names=FALSE)
