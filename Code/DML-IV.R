@@ -45,15 +45,28 @@ set.seed(seed.set)
 
 
 # Functions --------------------------------------------------------------------------------------------------
+# Multiplier bootstrap estimates 
+mboot <- function(y, x, b = 1000) {
+  est <- matrix(rep(NA, b*ncol(x)), nrow = b, ncol = ncol(x))  
+  for (i in 1:b) {
+    # Sampling weights
+    set.seed(seed.set)
+    wght <- sample(c(0,2), nrow(x), replace = TRUE)
+    # Computing esimtates
+    est[i,] <- solve(t(x)%*%(wght*as.matrix(x)))%*%(t(x)%*%(y*wght))
+  }
+  return(est)
+}
+
 # Clustering standard errors (traditional approach. Not needed for wild cluster bootstrap inf.) 
 clust.se <- function(est.model, cluster){
   G <- length(unique(cluster))
   N <- length(cluster)
-  # reweight the variance-covariance matrix by groups (clusters) and sample size, using the sandwich package 
+  # Reweight variance-covariance matrix by groups (clusters) and sample size, using the sandwich package 
   dfa <- (G/(G - 1)) * ((N - 1)/(N - est.model$rank))
   u <- apply(estfun(est.model),2,
              function(x) tapply(x, cluster, sum))
-  vcovCL <- dfa*sandwich(est.model, meat=crossprod(u)/N)
+  vcovCL <- dfa*sandwich(est.model, meat = crossprod(u)/N)
   coeftest(est.model, vcovCL) 
 }
 
@@ -65,7 +78,7 @@ partial.out <- function(y, x, nfold = 5){
                "mtry", "ntree", # For random forest (ranger) 
                "iterations", "learn_rate", "max_depth", "gamma", "frac_subsample", "colsample_bytree" # For gradient boosting (xgb) 
                )  
-  table.mse <- data.frame(matrix(nrow=0, ncol= length(columns)))
+  table.mse <- data.frame(matrix(nrow = 0, ncol = length(columns)))
   colnames(table.mse) <- columns
   
   # Split data in 80% training and 20% test data
