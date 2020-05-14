@@ -97,7 +97,6 @@ iv.wcb <- function(data = data.share,
                                               boot.reps = 1000, 
                                               impose.null = FALSE, 
                                               seed = seed.set)
-  simple.ivfit.clust$ci[2,c(1:2)]
   return(list("coeff" = simple.summ.ivfit$coefficients[2,1], 
               "ci.90.low" = simple.ivfit.clust.90$ci[2,1], 
               "ci.90.high" = simple.ivfit.clust.90$ci[2,2], 
